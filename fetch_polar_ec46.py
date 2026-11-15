@@ -190,6 +190,13 @@ def session():
     return s
 
 
+def save_state(st):
+    """Write the job state, so a restart can ADOPT what is in the store."""
+    with open(STATE + ".tmp", "w") as f:
+        json.dump(st, f, indent=1)
+    os.replace(STATE + ".tmp", STATE)
+
+
 def live_jobs(s):
     """-> the jobs the account has in the store, the live ones first."""
     try:
@@ -206,6 +213,11 @@ def live_jobs(s):
 
 # The account may hold this many jobs in the store at once.
 MAX_LIVE_JOBS = 2
+
+# How many times one chunk is asked for again when the store fails the
+# job.  On 15 Nov 2026 the store failed a job that had been queued for
+# more than nine hours, and the chunk was lost with it.
+RETRIES = 3
 
 
 def wait_for_queue(s, room, tries=180):
@@ -455,7 +467,7 @@ def submit(s, run_date, run_time, weeks):
     return j.get("jobID") or j.get("processID")
 
 
-def wait(s, jid, tries=1440, stall_limit=14400):
+def wait(s, jid, tries=14400, stall_limit=14400):
     """-> True when the job finishes.
 
     The queue is congested and a job can sit 'accepted' for a long time.
@@ -489,10 +501,15 @@ def wait(s, jid, tries=1440, stall_limit=14400):
             continue
         st = r.json().get("status")
         if st in ("successful", "completed"):
-            return True
+            return "done"
         if st in ("failed", "error", "rejected", "dismissed"):
+            # The STORE failed the job.  On 15 Nov 2026 it failed the
+            # chunk-0 job that had been queued since 08:01Z, after more
+            # than nine hours, and then deleted it.  That is the store's
+            # answer to the request, not a reason to skip the chunk: the
+            # chunk is asked for again.
             print("   the job is %s" % st, flush=True)
-            return False
+            return "failed"
         if st in ("running", "executing"):
             started = True
             slow = 0
@@ -504,8 +521,8 @@ def wait(s, jid, tries=1440, stall_limit=14400):
         if slow >= stall_limit:
             print("   the job %s has not started after %d checks" %
                   (jid, slow), flush=True)
-            return False
-    return False
+            return "timeout"
+    return "timeout"
 
 
 def download(s, jid, path):
@@ -600,12 +617,27 @@ def main():
         """One chunk, end to end.  -> (chunk, job, the decoded values)."""
         print("   the weeks %s ..." % (weeks[0] + " to " + weeks[-1]), flush=True)
         jid = adopted.get(i)
-        if jid:
-            print("   the job %s (adopted from the store)" % jid, flush=True)
-        else:
-            jid = submit(s, run_date, run_time, weeks)
-            print("   the job %s" % jid, flush=True)
-        if not wait(s, jid):
+        last = jid
+        for attempt in range(1, RETRIES + 1):
+            if jid:
+                print("   the job %s (adopted from the store)" % jid, flush=True)
+            else:
+                # the room is made first: the store refuses a request when
+                # the account already holds too many jobs
+                wait_for_queue(s, 1)
+                jid = submit(s, run_date, run_time, weeks)
+                print("   the job %s" % jid, flush=True)
+                # The job is recorded AT ONCE, not when the chunk is
+                # finished.  A job that is live in the store but not in the
+                # state file cannot be adopted after a restart, and the
+                # chunk would be asked for a second time.
+                st["jobs"].append({"chunk": i, "job": jid,
+                                   "status": "submitted"})
+                save_state(st)
+            last = jid
+            what = wait(s, jid)
+            if what == "done":
+                break
             # a job that will not start is dismissed, so it does not sit in
             # the queue holding a slot for the rest of the run
             try:
@@ -613,7 +645,12 @@ def main():
                 print("   the job %s dismissed" % jid, flush=True)
             except Exception:                        # noqa: BLE001
                 pass
-            return i, jid, None
+            jid = None
+            if attempt < RETRIES:
+                print("   the chunk is asked for again (attempt %d of %d)"
+                      % (attempt + 1, RETRIES), flush=True)
+        else:
+            return i, last, None
         path = os.path.join(DATA, "_ec46_%d.grib" % i)
         download(s, jid, path)
         vals, svals, nmem = read_grib(path)
@@ -638,9 +675,7 @@ def main():
     for i, jid, got in results:
         if got is None:
             st["jobs"].append({"chunk": i, "job": jid, "status": "failed"})
-            with open(STATE + ".tmp", "w") as f:
-                json.dump(st, f, indent=1)
-            os.replace(STATE + ".tmp", STATE)
+            save_state(st)
             continue
         vals, svals, nmem = got
         rec = out.setdefault(TAG, {"times": [], "values": [],
@@ -701,9 +736,7 @@ def main():
             json.dump(cache, f)
         os.replace(CACHE + ".tmp", CACHE)
         st["jobs"].append({"chunk": i, "job": jid, "status": "decoded"})
-        with open(STATE + ".tmp", "w") as f:
-            json.dump(st, f, indent=1)
-        os.replace(STATE + ".tmp", STATE)
+        save_state(st)
         print("   the chunk decoded: %d times so far" % len(rec["times"]),
               flush=True)
 

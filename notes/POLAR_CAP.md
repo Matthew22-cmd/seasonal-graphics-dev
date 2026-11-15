@@ -657,3 +657,19 @@ nothing for this account for more than twelve hours: the two jobs sat
 waited nearly eight hours, and a dismissal puts the request at the BACK of
 the queue.  `wait()` now waits 14400 checks (60 hours at 15 s) before it
 gives up on a job that has not started.
+
+### What the store did on 15 November (the queue's own answers)
+
+The store was not idle - it was **failing** the old jobs.  At 17:20Z the
+chunk-0 job (`9302be85`, queued 08:01:42Z) came back `failed` and was
+then deleted by the store (`404 ... job deleted`).  A store-side failure
+is the store's answer to the request, not a reason to skip the chunk, so
+`wait()` now returns what happened (`done` / `failed` / `timeout`) and a
+failed chunk is **asked for again** (up to three times), waiting for room
+in the queue before each new request.
+
+**A submitted job is recorded in the state file AT ONCE**, not when its
+chunk is finished.  A job that is live in the store but not in the state
+file cannot be adopted after a restart, and the chunk is asked for a
+second time - which takes the account's room away from the job that is
+already queued.
