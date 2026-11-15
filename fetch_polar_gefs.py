@@ -74,7 +74,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(HERE, "data")
 sys.path.insert(0, HERE)
 
-from polar_cap import LEVELS, read_grib_levels_sectors  # noqa: E402
+from polar_cap import LEVELS, SECTORS, read_grib_levels_sectors  # noqa: E402
 
 # the shared cache the plotter reads; this script only ever touches its own
 # key in it and never rewrites another model's record
@@ -629,9 +629,20 @@ def main():
     for fstep in range(12, MAX_LEAD_H + 1, 24):
         key = str(fstep)
         if st["leads"].get(key, {}).get("status") == "decoded":
-            out[key] = st["leads"][key]
-            print("   the lead %s is already decoded" % key, flush=True)
-            continue
+            # A lead that is already decoded is reused, UNLESS the sectors
+            # it carries are not the ones wanted now: the sector set grew
+            # (the Arctic sector was added so that the by-sector charts
+            # cover the whole polar cap), and a lead decoded without it
+            # has to be fetched again.
+            want = set(SECTORS)
+            have = set(st["leads"][key].get("sectors") or {})
+            if have == want or "--resectors" not in sys.argv:
+                out[key] = st["leads"][key]
+                print("   the lead %s is already decoded" % key, flush=True)
+                continue
+            print("   the lead %s carries %d sector(s) and %d are wanted - "
+                  "it is fetched again" % (key, len(have), len(want)),
+                  flush=True)
         print("   the lead f%03d ..." % fstep, flush=True)
         got = lead_members(members, fstep)
         got = {m: v for m, v in got.items() if len(v) == len(LEVELS)}

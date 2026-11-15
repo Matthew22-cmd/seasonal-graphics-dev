@@ -184,6 +184,136 @@
    "job": "0ea05ed5-b3a8-4d1a-9f61-1529b3ce5624",
    "status": "failed",
    "init": "2026-11"
+  },
+  {
+   "tag": "ecmwf-seas5",
+   "centre": "ecmwf",
+   "system": "51",
+   "chunk": 0,
+   "end": 15,
+   "job": "3f167386-ecad-4cb4-b347-0da5126c776d",
+   "status": "decoded",
+   "init": "2026-11",
+   "members": 51
+  },
+  {
+   "tag": "ecmwf-seas5",
+   "centre": "ecmwf",
+   "system": "51",
+   "chunk": 15,
+   "end": 30,
+   "job": "c61006d7-46a5-4bae-9fa7-a196d896337c",
+   "status": "decoded",
+   "init": "2026-11",
+   "members": 51
+  },
+  {
+   "tag": "ecmwf-seas5",
+   "centre": "ecmwf",
+   "system": "51",
+   "chunk": 30,
+   "end": 45,
+   "job": "00c09a4c-e6f5-4c78-ae9c-a78c341cb171",
+   "status": "decoded",
+   "init": "2026-11",
+   "members": 51
+  },
+  {
+   "tag": "ecmwf-seas5",
+   "centre": "ecmwf",
+   "system": "51",
+   "chunk": 45,
+   "end": 60,
+   "job": "3bc72322-1f80-4fee-b03e-c6f05c3a5342",
+   "status": "decoded",
+   "init": "2026-11",
+   "members": 51
+  },
+  {
+   "tag": "ecmwf-seas5",
+   "centre": "ecmwf",
+   "system": "51",
+   "chunk": 60,
+   "end": 75,
+   "job": "e2230e45-27aa-40e5-bb09-dec7d264fcfa",
+   "status": "decoded",
+   "init": "2026-11",
+   "members": 51
+  },
+  {
+   "tag": "ecmwf-seas5",
+   "centre": "ecmwf",
+   "system": "51",
+   "chunk": 75,
+   "end": 90,
+   "job": "6d6d49c4-78ae-4ddd-8b06-30c1a02b4e64",
+   "status": "decoded",
+   "init": "2026-11",
+   "members": 51
+  },
+  {
+   "tag": "ecmwf-seas5",
+   "centre": "ecmwf",
+   "system": "51",
+   "chunk": 90,
+   "end": 105,
+   "job": "d336b411-acc7-4aeb-8bc2-f10d8b266e90",
+   "status": "decoded",
+   "init": "2026-11",
+   "members": 51
+  },
+  {
+   "tag": "ecmwf-seas5",
+   "centre": "ecmwf",
+   "system": "51",
+   "chunk": 105,
+   "end": 120,
+   "job": "4149b170-e5d1-4a97-8042-71b1c08140bf",
+   "status": "decoded",
+   "init": "2026-11",
+   "members": 51
+  },
+  {
+   "tag": "ecmwf-seas5",
+   "centre": "ecmwf",
+   "system": "51",
+   "chunk": 120,
+   "end": 135,
+   "job": "bdc20b3e-39db-4c00-ae1c-02075265d264",
+   "status": "decoded",
+   "init": "2026-11",
+   "members": 51
+  },
+  {
+   "tag": "ecmwf-seas5",
+   "centre": "ecmwf",
+   "system": "51",
+   "chunk": 135,
+   "end": 150,
+   "job": "26b47dbf-22ed-44a5-b8a1-d910b2273339",
+   "status": "decoded",
+   "init": "2026-11",
+   "members": 51
+  },
+  {
+   "tag": "ecmwf-seas5",
+   "centre": "ecmwf",
+   "system": "51",
+   "chunk": 150,
+   "end": 165,
+   "job": "04f30f1f-3a25-4fbc-9465-8925fab98393",
+   "status": "accepted",
+   "init": "2026-11"
+  },
+  {
+   "tag": "ecmwf-seas5",
+   "centre": "ecmwf",
+   "system": "51",
+   "chunk": 165,
+   "end": 180,
+   "job": "b8d8fb2b-191d-4f13-9e69-72c5ef2fe3eb",
+   "status": "accepted",
+   "init": "2026-11"
   }
  ]
 }

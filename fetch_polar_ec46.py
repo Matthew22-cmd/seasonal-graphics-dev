@@ -455,7 +455,7 @@ def submit(s, run_date, run_time, weeks):
     return j.get("jobID") or j.get("processID")
 
 
-def wait(s, jid, tries=360, stall_limit=240):
+def wait(s, jid, tries=1440, stall_limit=1440):
     """-> True when the job finishes.
 
     The queue is congested and a job can sit 'accepted' for a long time.
@@ -464,9 +464,15 @@ def wait(s, jid, tries=360, stall_limit=240):
     size the archive has already answered at.
 
     The stall limit is generous on purpose: the store's queue can sit on a
-    job for HOURS (one was still 'accepted' after two and a half hours),
-    and a limit of a couple of minutes threw that job away and asked for it
-    again, which only made the queue longer.
+    job for HOURS (one was still 'accepted' after two and a half hours, and
+    two more were still untouched after thirty minutes while the store
+    processed NOTHING for the account), and a limit of a couple of minutes
+    threw that job away and asked for it again, which only made the queue
+    longer - a dismissal puts the request at the BACK of the queue.
+
+    So a job that has not started is waited out rather than dismissed: the
+    store's congestion is not the job's fault, and the account's own limit
+    is small enough that a job sitting there IS the account's slot.
     """
     started = False
     slow = 0

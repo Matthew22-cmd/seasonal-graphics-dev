@@ -107,17 +107,26 @@ def sector_mean(field, lat, lon, lon0, lon1):
 # The polar cap split into two sectors, so that a warming over one ocean
 # can be told from a warming over the other - the Atlantic and the Pacific
 # do not warm together, and the difference between them is the story.
-# The sectors are 120 degrees wide and do not overlap: the Atlantic runs
-# from 300E to 60E, the Pacific from 120E to 240E, and the Arctic sector
-# (240E to 300E) is left out.
+# The sectors do not overlap and together they cover the WHOLE polar cap:
+# the Pacific runs from 120E to 240E, the Arctic sector from 240E to 300E
+# (the Barents and the Siberian side), and the Atlantic from 300E to 60E.
+# The Arctic sector used to be left out, which meant the by-sector charts
+# did not account for a third of the cap - and a reader comparing a sector
+# with the whole-cap chart had no way to know where the rest of the cap
+# was.
 SECTORS = {
     "natl": (300.0, 60.0),
     "npac": (120.0, 240.0),
+    "narctic": (240.0, 300.0),
 }
 SECTOR_LABELS = {
     "natl": "North Atlantic",
     "npac": "North Pacific",
+    "narctic": "Arctic (Barents-Siberia)",
 }
+# the order the panels are drawn in: the Pacific at the top of the map, the
+# Arctic sector in the middle, the Atlantic at the bottom
+SECTOR_ORDER = ("npac", "narctic", "natl")
 
 
 def read_grib_levels(path, levels=None):
@@ -677,8 +686,8 @@ def plot_domain_map(ax):
         ax.add_collection(pc)
 
     # the sectors, over the map, so the geography shows through them
-    ax.add_patch(_wedge(240.0, 300.0, cap_r, "#cfd6de", alpha=0.85))
-    for name, colour in (("npac", "#f4b740"), ("natl", "#3d7fd1")):
+    for name, colour in (("npac", "#f4b740"), ("narctic", "#7fbf7f"),
+                         ("natl", "#3d7fd1")):
         lon0, lon1 = SECTORS[name]
         ax.add_patch(_wedge(lon0, lon1, cap_r, colour, alpha=0.62))
 
@@ -701,14 +710,19 @@ def plot_domain_map(ax):
     ax.add_patch(mpatches.Circle((0, 0), edge_r, facecolor="none",
                                   edgecolor="#9aa0a6", lw=0.9, zorder=5))
 
-    # the two sectors, named on the map
+    # the sectors, named on the map
     import matplotlib.patheffects as pe
     halo = [pe.withStroke(linewidth=2.2, foreground="white")]
-    for name, colour in (("npac", "#7a5200"), ("natl", "#123f77")):
+    for name, colour in (("npac", "#7a5200"), ("narctic", "#245c24"),
+                          ("natl", "#123f77")):
         lon0, lon1 = SECTORS[name]
         mid = (lon0 + (lon1 - lon0 if lon1 > lon0 else lon1 + 360 - lon0) / 2.0)
+        # the name on the map is the SHORT one: the full label is long
+        # enough to spill out of the cap and over the map's edge.
+        short = {"npac": "North Pacific", "narctic": "Arctic",
+                 "natl": "North Atlantic"}.get(name, name)
         x, y = pt(mid % 360.0, 74.0)
-        ax.text(x, y, SECTOR_LABELS.get(name, name), fontsize=8.0,
+        ax.text(x, y, short, fontsize=8.0,
                 fontweight="bold", color=colour, ha="center", va="center",
                 zorder=7, path_effects=halo)
 
@@ -731,10 +745,10 @@ def plot_domain_map(ax):
     handles = [
         mpatches.Patch(facecolor="#f4b740", edgecolor="none", alpha=0.62,
                        label="North Pacific (120°E-240°E)"),
+        mpatches.Patch(facecolor="#7fbf7f", edgecolor="none", alpha=0.62,
+                       label="Arctic (240°E-300°E)"),
         mpatches.Patch(facecolor="#3d7fd1", edgecolor="none", alpha=0.62,
                        label="North Atlantic (300°E-60°E)"),
-        mpatches.Patch(facecolor="#cfd6de", edgecolor="none", alpha=0.85,
-                       label="the rest of the polar cap"),
         mpatches.Patch(facecolor="#d9d3c6", edgecolor="#b3aa9a",
                        label="land"),
     ]
@@ -814,7 +828,8 @@ def _wedge(lon0, lon1, rmax, colour, alpha=1.0):
 
 def plot_sector_sections(times, sectors, levels, out_path, title, subtitle,
                          split=None, credit=None, handle="@Massachusettswx",
-                         order=("npac", "natl"), forecast_alpha=0.62):
+                         order=("npac", "narctic", "natl"),
+                         forecast_alpha=0.62):
     """Draw the polar cap split into two sectors, side by side.
 
     times:   (n,)    ISO strings
@@ -852,19 +867,27 @@ def plot_sector_sections(times, sectors, levels, out_path, title, subtitle,
     fig_h = 6.4
     fig = plt.figure(figsize=(fig_w, fig_h), facecolor="white")
 
-    # the panels: the two sectors side by side, then the map of the domains
-    left0, width = 0.045, 0.315
-    gap = 0.022
+    # The panels side by side, then the map of the domains.  The layout is
+    # computed from the number of panels: with the Arctic sector added there
+    # are three of them, and the hard-coded two-panel geometry put the map
+    # on top of the third.
+    npan = len(names)
+    map_w = 0.225
+    map_x = 1.0 - 0.018 - map_w
+    panel_right = map_x - 0.030
+    gap = 0.018
+    left0 = 0.045
+    width = (panel_right - left0 - (npan - 1) * gap) / npan
     axes = []
-    for i in range(len(names)):
+    for i in range(npan):
         ax = fig.add_axes([left0 + i * (width + gap), 0.175, width, 0.635])
         axes.append(ax)
 
     # the map of the domains the panels cover
-    map_ax = fig.add_axes([0.762, 0.105, 0.225, 0.705])
+    map_ax = fig.add_axes([map_x, 0.105, map_w, 0.705])
     plot_domain_map(map_ax)
-    fig.text(0.762, 0.822, "the domains", fontsize=11, fontweight="bold",
-             color=C_TEXT, ha="left", va="bottom")
+    fig.text(map_x + map_w / 2.0, 0.822, "the domains", fontsize=11,
+             fontweight="bold", color=C_TEXT, ha="center", va="bottom")
 
     for i, name in enumerate(names):
         ax = axes[i]
@@ -889,7 +912,10 @@ def plot_sector_sections(times, sectors, levels, out_path, title, subtitle,
                            color=C_TEXT)
         ax.set_ylabel("Pressure (hPa)", fontsize=10.5, color=C_TEXT, labelpad=6)
 
-        step = max(1, n // 8)
+        # Fewer date labels when there is less room: with three panels each
+        # one is narrower, and eight labels on each ran into the next
+        # panel's first label.
+        step = max(1, n // (8 if npan <= 2 else 5))
         idx = list(range(0, n, step))
         if idx[-1] != n - 1:
             if (n - 1) - idx[-1] >= step * 0.6:
@@ -926,13 +952,15 @@ def plot_sector_sections(times, sectors, levels, out_path, title, subtitle,
             ax.axvline(split - 0.5, color=C_SPLIT, lw=1.2, ls=(0, (5, 3)),
                        zorder=6)
 
-        # the panel's own name, above it
-        fig.text(left0 + i * (width + gap), 0.822,
+        # the panel's own name, above it.  It is CENTRED over its panel:
+        # left-aligned, the three names ran into each other, and the map's
+        # own heading ran into the third one.
+        fig.text(left0 + i * (width + gap) + width / 2.0, 0.822,
                  "%s (%.0f°E-%.0f°E)" % (SECTOR_LABELS.get(name, name),
                                          SECTORS[name][0],
                                          SECTORS[name][1]),
-                 fontsize=11, fontweight="bold", color=C_TEXT,
-                 ha="left", va="bottom")
+                 fontsize=10.0, fontweight="bold", color=C_TEXT,
+                 ha="center", va="bottom")
 
     # the height axis, on the far right only
     ax2 = axes[-1].twinx()

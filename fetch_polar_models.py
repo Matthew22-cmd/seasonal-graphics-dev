@@ -110,6 +110,14 @@ def init_of(tag):
     return 2026, 11
 
 
+def _day_of(n):
+    """The n-th day of the run, as a calendar date string."""
+    from datetime import date, timedelta
+    y, m = init_of("ecmwf-seas5")
+    d = date(y, m, 1) + timedelta(days=n)
+    return d.isoformat()
+
+
 def chunk_list(n_days):
     return [(i, i + CHUNK_DAYS) for i in range(0, n_days, CHUNK_DAYS)]
 
@@ -198,8 +206,34 @@ def main():
     MAX_INFLIGHT = 2
 
     def decoded(tag):
-        return {j["chunk"] for j in st["jobs"]
+        """The chunks whose VALUES are actually in the output file.
+
+        The state file says a chunk is 'decoded' once it has been read, but
+        the values live in the output file, and the output file is
+        gitignored - so a fresh checkout has the state and not the data,
+        and a fetcher that trusted the state would skip every chunk and
+        never rebuild anything.  The chunks that are really there are the
+        ones the OUTPUT holds a time range for.
+        """
+        have = {j["chunk"] for j in st["jobs"]
                 if j.get("tag") == tag and j.get("status") == "decoded"}
+        rec = out.get(tag) or {}
+        times = rec.get("times") or []
+        if not times:
+            return set()
+        # the chunk's day range, from the first and the last time it holds
+        covered = set()
+        for c0, c1 in chunk_list(RUN_DAYS.get(tag, 215)):
+            lo = _day_of(c0)
+            hi = _day_of(c1 - 1)
+            if any(lo <= str(t)[:10] <= hi for t in times):
+                covered.add(c0)
+        missing = have - covered
+        if missing:
+            print("   the %s: %d chunk(s) are marked decoded but the values "
+                  "are not in the output file - they are asked for again"
+                  % (tag, len(missing)), flush=True)
+        return covered
 
     def live():
         return [j for j in st["jobs"]
