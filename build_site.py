@@ -514,7 +514,10 @@ const MODELS = __MODELS__;
 
 function q(p){const m=new URLSearchParams(location.search);return m.get(p);}
 const sel=document.getElementById('modelSel');
-if(q('m') && MODELS[q('m')]) sel.value=q('m');
+// A model with no snowfall panel cannot be shown on this page.  Setting the
+// select to a model that is not one of its options empties the select, and
+// every panel below then breaks on an undefined model.
+if(q('m') && MODELS[q('m')] && MODELS[q('m')].total) sel.value=q('m');
 
 function model(){return MODELS[sel.value];}
 
@@ -726,8 +729,12 @@ const MODELS=__MODELS__;
 function q(p){const m=new URLSearchParams(location.search);return m.get(p);}
 const sel=document.getElementById('modelSel');
 const dom=document.getElementById('domSel');
-if(q('m') && MODELS[q('m')]) sel.value=q('m');
-if(q('d') && MODELS[sel.value].spv && MODELS[sel.value].spv[q('d')]) dom.value=q('d');
+// This page is the 10 hPa wind page: a model with no wind panel (a
+// sub-seasonal run, say) is not one of the options, and selecting it would
+// empty the select and break every panel below.
+if(q('m') && MODELS[q('m')] && MODELS[q('m')].spv) sel.value=q('m');
+if(q('d') && MODELS[sel.value] && MODELS[sel.value].spv
+   && MODELS[sel.value].spv[q('d')]) dom.value=q('d');
 function model(){return MODELS[sel.value];}
 function render(){
   const m=model();

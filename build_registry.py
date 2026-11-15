@@ -507,9 +507,30 @@ def main():
         print("   the medium-range polar-cap chart removed")
     for entry in reg["models"]:
         src = os.path.join(OUT, "polar_cap", "polar_cap_%s.png" % entry["id"])
-        if not os.path.exists(src):
-            continue
         fn = "polar_cap_%s.png" % entry["id"]
+        pub = os.path.join(POLARDIR, fn)
+        if not os.path.exists(src):
+            # The chart is published but this machine has no series for it -
+            # the working files are not in the repository.  A missing working
+            # file is not a reason to take a published chart off the site, so
+            # the published chart stays and stays in the registry.
+            if os.path.exists(pub):
+                entry["polar"] = {
+                    "file": "assets/polar/" + fn,
+                    "caption": "Polar cap (60-90N) geopotential height "
+                               "anomaly - %s." % entry["name"],
+                }
+                sfn = "polar_sectors_%s.png" % entry["id"]
+                if os.path.exists(os.path.join(POLARDIR, sfn)):
+                    entry["polar_sectors"] = {
+                        "file": "assets/polar/" + sfn,
+                        "caption": "North Pacific and North Atlantic (60-90N) "
+                                   "geopotential height anomaly - %s."
+                                   % entry["name"],
+                    }
+                print("   the %s polar-cap chart is published and is kept"
+                      % entry["id"])
+            continue
         shutil.copyfile(src, os.path.join(POLARDIR, fn))
         entry["polar"] = {
             "file": "assets/polar/" + fn,
