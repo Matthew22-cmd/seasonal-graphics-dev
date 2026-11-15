@@ -612,3 +612,40 @@ The stall limit was also too aggressive: a job that had been queued for two
 and a half hours was dismissed as "stuck" after eight checks (two
 minutes) and asked for again, which made the queue longer.  It is now
 generous enough to ride out a congested store.
+
+### The four sectors cover the whole cap
+
+The by-sector figure used to split the cap into the North Pacific and the
+North Atlantic and left the Barents-Kara wedge unaccounted for.  It is now
+four contiguous sectors, so the width-weighted mean of the four is the cap
+mean exactly (CORe +1 m2/s2, GEFS +0, SEAS5 -0):
+
+| sector | longitude | width |
+|---|---|---|
+| `natl` | 300E-60E | 120 deg |
+| `npac` | 120E-240E | 120 deg |
+| `narctic` | 240E-300E | 60 deg |
+| `nbarents` | 60E-120E | 60 deg |
+
+**A date label centred on its tick hangs half outside its panel.**  On the
+sector figure the panels sit shoulder to shoulder, and the last date of
+one panel ran straight into the first date of the next ("18 Dec30 Oct").
+The panels share one time axis, so the outer panels now carry the start
+and the end date and the inner ones leave those two labels out.  The TICKS
+stay on every panel, so the gridlines still line up.
+
+### The EC46 queue, 15 November (afternoon)
+
+The store processed **nothing** for this account after 02:58Z.  Two
+requests sit `accepted` with no message - chunk 0 (`9302be85`, queued
+08:01:42Z) and chunk 10 (`4c1015b9`, queued 09:34:31Z).  A fresh 5-day
+request also sat `accepted`.  The jobs are recorded in
+`data/polar_ec46_jobs.json`, so a restarted fetcher adopts them again
+instead of asking for those chunks a second time.
+
+**There is no other route to the S2S data** - all checked on 15 Nov:
+
+* the CDS catalogue (144 collections) has no `s2s` or sub-seasonal entry;
+* the open `ecmwf-forecasts` S3 bucket carries `ifs/`, `aifs-ens/` and
+  `aifs-single/` only - no extended range;
+* `ecmwf-open-data`, `s2s-forecasts` and `ecmwf-s2s` are not buckets.
