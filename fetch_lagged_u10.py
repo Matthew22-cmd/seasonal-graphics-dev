@@ -135,6 +135,22 @@ def ensemble_layout(tag):
     return days, numbering, nmem
 
 
+def record_daily_members(tag, nmem):
+    """-> the daily member count, written into the fetch state."""
+    p = os.path.join(DATA, "models_fetched.json")
+    if not os.path.exists(p):
+        return
+    try:
+        d = json.load(open(p))
+    except Exception:                                # noqa: BLE001
+        return
+    for key in (tag, tag.replace("-", "_")):
+        if key in d and isinstance(d[key], dict):
+            d[key]["members"] = int(nmem)
+            d[key]["daily_wind"] = True
+    json.dump(d, open(p, "w"), indent=1)
+
+
 def init_of(tag):
     """-> (year, month) of the run this centre is on."""
     p = os.path.join(DATA, "models_fetched.json")
@@ -167,12 +183,27 @@ def start_groups(numbering):
     return [(y, m, g[(y, m)]) for (y, m) in sorted(g)]
 
 
-def lead_list(n_days):
-    """The daily 12Z lead times of a run: 12, 36, 60, ... hours."""
+# The daily lead times are NOT the same for every centre.  The UKMO and the
+# JMA store their sub-daily product at 12-hour steps (12, 36, 60, ...), but
+# the BoM stores it at 24-hour steps (24, 48, 72, ...): a request for the
+# BoM's 12- or 36-hour lead comes back as MarsNoDataError even though the
+# product exists.  Asking for the whole run with the wrong phase therefore
+# returns NOTHING at all for the BoM, which is why its daily wind could
+# never be built.
+LEAD_PHASE = {"bom-access-s2": 24}
+
+
+def lead_list(n_days, tag=None):
+    """The daily lead times of a run.
+
+    -> 12, 36, 60, ... hours for the UKMO and the JMA, and 24, 48, 72, ...
+    for the BoM.
+    """
+    phase = LEAD_PHASE.get(tag, 12)
     out = []
     k = 0
-    while 12 + LEAD_STEP * k <= min(LEAD_MAX, 12 + LEAD_STEP * (n_days - 1)):
-        out.append(12 + LEAD_STEP * k)
+    while phase + LEAD_STEP * k <= min(LEAD_MAX, phase + LEAD_STEP * (n_days - 1)):
+        out.append(phase + LEAD_STEP * k)
         k += 1
     return out
 
@@ -220,6 +251,8 @@ def read_lagged_u10(path, numbering=None):
     import eccodes
     recs = []
     members = set()
+    # the member numbers the sub-daily product used on each start day
+    raw_by_start = {}
     with open(path, "rb") as f:
         while True:
             try:
@@ -266,23 +299,41 @@ def read_lagged_u10(path, numbering=None):
                     continue
                 mem = int(num if num is not None else pn)
 
-                # the member id of the MONTHLY series, so the two agree
-                if numbering and start in numbering:
-                    pair = sorted(numbering[start])
-                    k = mem - 1
-                    if 0 <= k < len(pair):
-                        mem = pair[k]
+                # The member id of the MONTHLY series, so the two agree.
+                # The sub-daily product numbers the members of a start day
+                # from ZERO (the JMA: 0,1,2,3,4) while the UKMO numbers them
+                # from ONE (1,2), so the index into the start day's pair is
+                # taken from the SET of numbers the day actually used - and
+                # that set is only known once the whole file has been read.
+                # Reading it as `mem - 1` shifted the JMA's whole ensemble
+                # by one and made two members of every day collide.
+                raw_by_start.setdefault(start, set()).add(mem)
 
                 recs.append(dict(valid=valid, member=mem, start=start,
                                  step=int(_g(gid, "step", 0) or 0),
                                  level=_g(gid, "level"),
                                  s60=point_mean(v, lats, 60.0),
                                  sNH=zonal_mean(v, lats)))
-                members.add(mem)
             except Exception:
                 pass
             finally:
                 eccodes.codes_release(gid)
+
+    # Now that every member of every start day is known, the sub-daily
+    # member numbers are paired with the MONTHLY series' member numbers, so
+    # the daily and the monthly series of a centre carry the same ids.
+    members = set()
+    for r in recs:
+        start = r["start"]
+        mem = r["member"]
+        if numbering and start in numbering:
+            pair = sorted(numbering[start])
+            order = sorted(raw_by_start.get(start, ()))
+            k = order.index(mem) if mem in order else -1
+            if 0 <= k < len(pair):
+                mem = pair[k]
+        r["member"] = mem
+        members.add(mem)
     return recs, sorted(members)
 
 
@@ -424,13 +475,36 @@ def fetch_chunk(c, tag, year, month, days, leads, gpath):
     return True
 
 
-def chunk_plan(n_traj, n_leads, points_per_field):
-    """-> the list of lead windows for a group of n_traj trajectories."""
+def chunk_plan(n_traj, n_leads, points_per_field, tag=None):
+    """-> the list of lead windows for a group of n_traj trajectories.
+
+    The archive caps the RESPONSE SIZE and silently DROPS members when the
+    answer is too big, so the budget has to be right: the answer is
+    n_traj x n_leads fields, and a field is the centre's own grid.  The
+    budget used to be computed from a nominal 360x91 grid, which is too
+    small for the JMA (a 1.25 degree grid over the northern hemisphere is
+    not much bigger, but the BoM's 1 degree grid is) - and a chunk that came
+    back short was thrown away with no smaller retry, so the JMA's daily
+    wind never got built at all.
+    """
     per_field_mb = points_per_field * BYTES_PER_POINT / 1e6
     max_fields = max(1, int(MAX_MB / max(per_field_mb, 1e-6)))
     per_chunk = max(1, max_fields // max(n_traj, 1))
-    leads = lead_list(n_leads)
+    leads = lead_list(n_leads, tag)
     return [leads[i:i + per_chunk] for i in range(0, len(leads), per_chunk)]
+
+
+def halve(chunks):
+    """-> the same lead windows, each split in two (a smaller answer)."""
+    out = []
+    for ch in chunks:
+        if len(ch) <= 1:
+            out.append(ch)
+            continue
+        mid = len(ch) // 2
+        out.append(ch[:mid])
+        out.append(ch[mid:])
+    return out
 
 
 def main():
@@ -454,7 +528,7 @@ def main():
         print("\n%s: %d members on %d start days (%s .. %s), %s per day"
               % (tag, nmem, len(days), days[0], days[-1], counts), flush=True)
         n_days = RUN_DAYS.get(tag, 215)
-        leads = lead_list(n_days)
+        leads = lead_list(n_days, tag)
         print("   %d daily lead times (%d h .. %d h), %d month group(s)"
               % (len(leads), leads[0], leads[-1], len(groups)), flush=True)
         if args.dry_run:
@@ -488,7 +562,7 @@ def main():
                 chunks = [leads[i:i + args.leads_per_chunk]
                           for i in range(0, len(leads), args.leads_per_chunk)]
             else:
-                chunks = chunk_plan(ntraj, n_days, points)
+                chunks = chunk_plan(ntraj, n_days, points, tag)
             print("   group %04d-%02d: %d start days, %d trajectories, "
                   "%d chunk(s) of %d leads"
                   % (y, m, len(ds), ntraj, len(chunks), len(chunks[0])),
@@ -509,6 +583,31 @@ def main():
                       % (y, m, k, len(recs), len(members), len(dates),
                          (" (SHORT by %d)" % missing) if missing else ""),
                       flush=True)
+                if missing:
+                    # The answer was too big and the archive dropped members
+                    # from it.  The chunk is asked for again in two halves,
+                    # which are half the size each.
+                    print("   the answer was short - asking for it again in "
+                          "halves", flush=True)
+                    for half in halve([chunk]):
+                        gp2 = os.path.join(MDIR, tag, "_lagged_h.grib")
+                        if not fetch_chunk(c, tag, y, m, ds, half, gp2):
+                            continue
+                        try:
+                            r2, m2 = read_lagged_u10(gp2, numbering)
+                            d2, s60_2, snh_2, per2 = build_matrix(r2, m2)
+                        finally:
+                            if os.path.exists(gp2):
+                                os.remove(gp2)
+                        print("      the half: %d records, %d members, %d dates"
+                              % (len(r2), len(m2), len(d2)), flush=True)
+                        if not m2:
+                            continue
+                        if acc[0] is None:
+                            acc = [d2, s60_2, snh_2, m2]
+                        else:
+                            acc = merge(acc, (d2, s60_2, snh_2, m2))
+                    continue
                 if not members:
                     continue
                 if acc[0] is None:
@@ -523,6 +622,12 @@ def main():
                                    members_per_start_day=counts,
                                    members=len(acc[3]), days=len(acc[0]),
                                    source=DATASET))
+                # The fetch state is what the site's cards read their
+                # member count from, and the DAILY series is what the wind
+                # chart is drawn from: the UKMO's monthly pull has 60
+                # members and its daily series 62, so the state has to
+                # follow the daily one or the card understates the chart.
+                record_daily_members(tag, len(acc[3]))
         # the chart is drawn over the window in which the whole ensemble is
         # present, from the run's reference date onwards
         if acc[0]:

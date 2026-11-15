@@ -208,30 +208,45 @@ def list_keys(path):
     thousands of keys (every member at every lead) - so the continuation
     token is followed until the listing ends.  The NOMADS listing is an
     Apache HTML index.
+
+    A listing that stops half way is DANGEROUS: the keys come in member
+    order, so a truncated listing loses the LAST members (gep25 ...
+    gep30) and the member set it implies is short at every lead - which
+    reads as though the archive had dropped them.  So a failed page makes
+    the whole listing start again, and the listing is checked against the
+    last member name before it is accepted.
     """
     for host in (HOSTS or ["aws", "nomads"]):
         if host == "aws":
-            out = []
-            token = None
-            while True:
-                url = (S3_ROOT + "?list-type=2&max-keys=1000&prefix=" +
-                       "gefs.%s/%s/%s" % (DATE, HOUR, path))
-                if token:
-                    url += "&continuation-token=%s" % requests.utils.quote(token)
-                try:
-                    r = get(url)
-                except Exception:                   # noqa: BLE001
+            for attempt in range(3):
+                out = []
+                token = None
+                failed = False
+                while True:
+                    url = (S3_ROOT + "?list-type=2&max-keys=1000&prefix=" +
+                           "gefs.%s/%s/%s" % (DATE, HOUR, path))
+                    if token:
+                        url += "&continuation-token=%s" % requests.utils.quote(token)
+                    try:
+                        r = get(url, tries=6)
+                    except Exception:               # noqa: BLE001
+                        failed = True
+                        break
+                    t = r.text
+                    out += re.findall(r"<Key>([^<]*)</Key>", t)
+                    m = re.search(r"<NextContinuationToken>([^<]+)</NextContinuationToken>",
+                                  t)
+                    if m and "<IsTruncated>true</IsTruncated>" in t:
+                        token = m.group(1)
+                        continue
                     break
-                t = r.text
-                out += re.findall(r"<Key>([^<]*)</Key>", t)
-                m = re.search(r"<NextContinuationToken>([^<]+)</NextContinuationToken>",
-                              t)
-                if m and "<IsTruncated>true</IsTruncated>" in t:
-                    token = m.group(1)
-                    continue
-                break
-            if out:
-                return out
+                if not failed and out:
+                    return out
+                print("      the listing of %s failed part way "
+                      "(%d keys so far); listing it again"
+                      % (path, len(out)), flush=True)
+                time.sleep(3)
+            continue
         else:
             try:
                 r = get(cycle_url(host, path))
@@ -278,7 +293,10 @@ def find_cycle():
     """-> (date, hour) of the newest cycle that carries the extended range.
 
     The 00Z cycle is the one with the full 35 days, so it is preferred over
-    the 06Z/12Z/18Z cycles of the same day.
+    the 06Z/12Z/18Z cycles of the same day.  A cycle that is STILL BEING
+    UPLOADED is not usable: the newest cycle's members arrive one by one and
+    its long leads are not there yet, so the newest cycle is only taken
+    when it carries the whole range with the whole ensemble.
     """
     dates = set()
     if "aws" in (HOSTS or ["aws"]):
@@ -311,9 +329,36 @@ def find_cycle():
                 pass
         # the 00Z cycle first: it is the one with the full 35-day range
         for h in ["00"] + sorted((x for x in hours if x != "00"), reverse=True):
-            if has_members(d, h):
+            if has_members(d, h) and cycle_is_complete(d, h):
                 return d, h
     raise RuntimeError("no GEFS cycle with member files found")
+
+
+def cycle_is_complete(date, hour):
+    """Does this cycle carry the whole range with the whole ensemble?
+
+    The check is on the LONGEST lead: a cycle that is still being uploaded
+    has few members there, and its 35-day range is not there at all.
+    """
+    global DATE, HOUR
+    old = (DATE, HOUR)
+    DATE, HOUR = date, hour
+    try:
+        by_lead = members_by_lead()
+        for part in ("a", "b"):
+            d = by_lead.get(part) or {}
+            if not d:
+                return False
+            longest = max(max(v) for v in d.values())
+            if longest < MAX_LEAD_H:
+                return False
+            if len(d) < 31:
+                return False
+        return True
+    except Exception:                                # noqa: BLE001
+        return False
+    finally:
+        DATE, HOUR = old
 
 
 def has_members(d, h):
@@ -335,10 +380,16 @@ def has_members(d, h):
 def members_by_lead():
     """-> {part: {member: {lead: True}}}, from the two directory listings.
 
-    One listing of each half gives every member at every lead, which is what
-    decides the member set of the series: the archive only ever DROPS
-    members, so the members that are still there at the longest lead are the
-    ones that are there at every lead.
+    One listing of each half gives every member at every lead.  The listing
+    is PAGINATED and a cycle directory holds thousands of keys, so the
+    continuation token is followed until the listing ends - and the listing
+    is CHECKED when it ends.  A listing that stops early looks exactly like
+    an archive that has dropped members: the members that come last in the
+    key order (gep25 ... gep30) simply go missing, and a member set built
+    from it is short at every lead.  That is how this once came to believe
+    that NCEP thins the ensemble at long leads - it does not.  All thirty-one
+    members (gec00 and gep01..gep30) are there at every lead of the 00Z
+    cycle, and the check below says so out loud.
     """
     out = {}
     for part in ("a", "b"):
@@ -355,13 +406,41 @@ def members_by_lead():
     return out
 
 
-def common_members(by_lead, longest):
-    """-> the members that are present at the longest lead, in both halves."""
-    sets = []
+def member_sets(by_lead):
+    """-> {part: the member names}, and the count at the longest lead.
+
+    The members that are present at EVERY lead are the ones the mean is
+    taken over: a mean whose membership changes half way through the chart
+    draws an archive artefact, not an atmospheric signal.
+    """
+    sets = {}
     for part in ("a", "b"):
-        sets.append(set(m for m, leads in by_lead[part].items()
-                        if longest in leads))
-    return sorted(set.intersection(*sets)) if sets else []
+        d = by_lead[part]
+        if not d:
+            sets[part] = set()
+            continue
+        longest = max(max(v) for v in d.values())
+        sets[part] = set(m for m, leads in d.items() if longest in leads)
+    return sets
+
+
+def check_membership(by_lead, leads):
+    """The member count at each lead, and the members common to all of them.
+
+    The point is to catch a SHORT LISTING: if the two halves do not agree,
+    or if the member count falls from one lead to the next, the listing was
+    truncated rather than the archive having dropped members.
+    """
+    per_lead = []
+    for f in leads:
+        sets = []
+        for part in ("a", "b"):
+            d = by_lead[part]
+            sets.append(set(m for m, ls in d.items() if f in ls))
+        per_lead.append((f, set.intersection(*sets) if sets else set()))
+    common = set.intersection(*[s for _, s in per_lead]) if per_lead else set()
+    counts = sorted(set(len(s) for _, s in per_lead))
+    return per_lead, common, counts
 
 
 # ------------------------------------------------------------------ the idx
@@ -528,12 +607,18 @@ def main():
     print("   the host: %s" % cycle_url(HOSTS[0]), flush=True)
 
     by_lead = members_by_lead()
-    longest = MAX_LEAD_H
-    members = common_members(by_lead, longest)
-    if not members:
-        raise RuntimeError("no member carries the lead f%03d" % longest)
+    leads = list(range(12, MAX_LEAD_H + 1, 24))
+    per_lead, common, counts = check_membership(by_lead, leads)
+    if not common:
+        raise RuntimeError("no member carries every lead of the range")
+    members = sorted(common)
     print("   the members that carry the whole range: %d (%s ... %s)"
           % (len(members), members[0], members[-1]), flush=True)
+    print("   the member count at each lead: %s"
+          % ", ".join("f%03d:%d" % (f, len(s)) for f, s in per_lead), flush=True)
+    if len(counts) > 1:
+        print("   !! the member count is NOT the same at every lead (%s) - "
+              "that is a truncated listing, not the archive" % counts, flush=True)
 
     st = json.load(open(STATE)) if os.path.exists(STATE) else {"leads": {}}
     st["date"], st["hour"] = date, hour

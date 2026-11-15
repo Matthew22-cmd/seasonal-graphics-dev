@@ -515,3 +515,100 @@ slot, so the sector mask was meaningless and every sector mean came back
 NaN - the sector panels came out blank.  The CORe's sector means are now
 real: the North Atlantic 290,093 and the North Pacific 301,665 against the
 cap's 296,257 on 13 November 2026.
+
+### The GEFS ensemble is 31 members, and it always was
+
+The 24-member member set was an ARTEFACT OF MY OWN LISTING, not NCEP
+thinning the ensemble.  The S3 listing of a cycle directory is PAGINATED
+(thousands of keys) and the keys come in member order, so a listing that
+stops half way loses the LAST members (gep25 ... gep30) - and a member set
+built from it is short at every lead, which reads exactly like an archive
+that has dropped members.
+
+Measured on the 20261114 00Z cycle, with the pagination followed to the
+end: **gec00 and gep01..gep30 - all 31 members - are present at EVERY lead
+from f012 to f840**, in both the pgrb2a and the pgrb2b halves.  The
+archive does not thin the ensemble at long leads.
+
+`fetch_polar_gefs.py` now (a) restarts the whole listing if a page fails,
+(b) checks the member count at every lead and says so out loud, and (c)
+takes the members common to EVERY lead rather than those at the longest
+lead alone.  The chart now says "31 members".
+
+### The three lagged centres: the UKMO, the JMA and the BoM
+
+These three run a **lagged ensemble**: their members are not all started on
+the same day.  The UKMO's 62 members start two per day over 31 consecutive
+days (2026-10-02 .. 2026-11-01), the JMA's 155 five per day over the same
+31 days, and the BoM's 99 eleven per day over nine days.
+
+The C3S sub-daily product's `day` input selects the members **started on
+that day**, so the pipeline's `day=["01"]` request comes back with 2
+members for the UKMO and 5 for the JMA.  That is not a broken answer: it is
+the whole of the members that started on the 1st.  Asking for a date that
+is not a start date is refused outright by MARS ("Restricted access to
+current C3S seasonal forecast non-ECMWF contribution"), which is why
+"day 02" and "day 15" fail rather than coming back empty.
+
+`fetch_lagged_u10.py` asks for every start day of the run and decodes each
+member from its OWN validity date (never dataDate, which is the member's
+start date and differs from member to member).  The start days are read
+off the monthly pull, which carries the whole lagged ensemble - so no
+request is needed to find them.
+
+The monthly u10 pull is worth keeping anyway: it is the chart the three
+centres publish, and it is the only thing that knows the run's layout.
+
+### The lagged daily wind is built: three bugs on the way
+
+The three lagged centres now publish a DAILY 10 hPa zonal-mean zonal wind
+(UKMO 62 members, JMA 155, BoM 99) instead of the monthly one.  Three
+traps had to be cleared first, and each of them looked like something else:
+
+1. **The member numbering is not the same for every centre.**  The UKMO
+   numbers the members of a start day from ONE (1, 2) and the JMA numbers
+   them from ZERO (0, 1, 2, 3, 4).  Reading the index into the start
+   day's group as `number - 1` shifted the JMA's whole ensemble by one and
+   made two members of every day collide: the chart showed 121 members
+   where there were 150.  The index is now taken from the SET of numbers
+   the day actually used, which is only known once the whole file has been
+   read - so the pairing is a second pass.
+
+2. **The BoM's sub-daily product is stored at 24-HOUR steps**, not the
+   12-hour steps the other two use: a request for its 12- or 36-hour lead
+   comes back as MarsNoDataError, while 24, 48, 72, 168 and 264 are all
+   there.  Asking for the whole run at the 12-hour phase therefore
+   returned NOTHING for the BoM - it read like "the BoM has no sub-daily
+   product", which it does not.  `LEAD_PHASE` carries the phase per
+   centre, and the BoM's chart says "24-hour steps".
+
+3. **A short chunk is not a big chunk.**  The JMA's first answer was short
+   by 29 members, and the half-size retry was short by 29 as well - the
+   response size was never the problem.  The chunk plan was reading the
+   phase from the wrong place (the `chunk_plan` call did not pass the tag),
+   so the retry asked for the same wrong-phase leads again.
+
+**The coverage is real.**  Every member of every start day spans the whole
+valid range, so the chart draws the whole ensemble; the number of members
+present on a given day falls away at the far end only because the members
+that started earliest run out of lead time first, which is what a lagged
+ensemble does.
+
+### The ECDS queue
+
+The EC46 (the ECMWF sub-seasonal ensemble) comes from the ECMWF Data
+Store's `s2s-forecasts` dataset, and the store's queue sat **accepted**
+for hours on 15 November - a tiny control-only request for one lead did
+not start either, so it is the store, not the request.  Two things had to
+change in `fetch_polar_ec46.py`:
+
+* **a job already in the store is ADOPTED**, not asked for again - a
+  second request for the same chunk only makes the queue longer and takes
+  the account's room away from the chunk that is already there;
+* **the room check counts the jobs the account already holds**, and the
+  limit is a total (two), so the room wanted is the number to ADD.
+
+The stall limit was also too aggressive: a job that had been queued for two
+and a half hours was dismissed as "stuck" after eight checks (two
+minutes) and asked for again, which made the queue longer.  It is now
+generous enough to ride out a congested store.

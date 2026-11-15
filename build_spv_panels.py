@@ -134,6 +134,12 @@ def month_table(times, ens, era, same_days=False):
     return {"head": ["Model ens. mean (m/s)", "ERA5 clim. (m/s)"], "rows": rows}
 
 
+# The BoM's sub-daily product is stored at 24-hour steps, not 12-hour ones
+# (a request for its 12- or 36-hour lead comes back as MarsNoDataError), so
+# its chart must not claim 12-hour steps.
+STEP_NOTE = {"bom-access-s2": "24-hour"}
+
+
 def render_daily(tag, name, init, times, m60, mnh, daily_label):
     """Draw the 60N and NH panels from a daily member matrix."""
     # A lead month the run only covered for a couple of days is not a lead
@@ -154,12 +160,12 @@ def render_daily(tag, name, init, times, m60, mnh, daily_label):
         render_spv(mat, times, name, fn, domain=dom, era5=era, model_clim=None,
                    n_members=mat.shape[0], credit=credit_for(tag),
                    x_end=last,
-                   subtitle="Run init 01 %s %d · %d daily 12Z steps (%d members)%s"
+                   subtitle="Run init 01 %s %d · %d daily %s steps (%d members)%s"
                             " · lead months 1–%d (through %d %s %d) · "
                             "ERA5 climatology 1991–2020"
                             % (MONTHS[int(init[-2:]) - 1], int(init[:4]), len(times),
-                               mat.shape[0], resnote, nlead,
-                               last.day, MONTHS[last.month - 1], last.year),
+                               STEP_NOTE.get(tag, "12-hour"), mat.shape[0], resnote,
+                               nlead, last.day, MONTHS[last.month - 1], last.year),
                    footer="Data: %s seasonal forecast (CDS) · ERA5 climatology "
                           "1991–2020" % name,
                    title="%s · 10 hPa · %s Zonal-Mean Zonal Wind (m/s)"
@@ -410,11 +416,14 @@ def prune_stale_panels(state):
 
     * a panel for a domain that is no longer published - the Northern
       Hemisphere 0-90 option was removed;
-    * a panel whose source data has gone - the CMCC and DWD daily wind
-      files were removed in the disk clean-up, which left their charts on
-      the site with nothing behind them.  A chart that cannot be rebuilt
-      and whose init label cannot be checked is worse than no chart, so it
-      goes.  The daily wind is queued, and the charts come back with it.
+    * a panel whose model has been RETIRED from the site.
+
+    A missing working file is NOT a reason to take a published chart down.
+    The working files under data/ are gitignored, so a fresh checkout has
+    none of them, and the CMCC's, the DWD's, the ECCC's and the
+    Meteo-France's panels were all deleted on the strength of that alone -
+    charts that are on the site now and that are still real.  A panel is
+    only removed when the model behind it is gone from the registry.
     """
     def has_data(tag):
         return (os.path.exists(os.path.join(MDIR, tag, "u10_daily.npz")) or
@@ -429,7 +438,9 @@ def prune_stale_panels(state):
             if not dead.startswith("SPV_") or not dead.endswith(".png"):
                 continue
             tag = dead[4:].rsplit("_", 1)[0]
-            if "_NH." in dead or (tag not in state or not has_data(tag)):
+            # a model that is still in the registry keeps its published
+            # panel even when its working files are not on this machine
+            if "_NH." in dead or tag not in state:
                 os.remove(os.path.join(d, dead))
                 print("   removed the orphan %s" % dead)
                 n += 1

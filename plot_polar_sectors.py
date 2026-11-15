@@ -41,8 +41,15 @@ CLIM_CDSDAILY = os.path.join(DATA, "polar_cap_clim_cdsdaily.npz")
 # the climate built from NOAA's CORe reanalysis - the same product the
 # reanalysis half is measured with
 CLIM_CORE = os.path.join(DATA, "polar_cap_clim_core.npz")
+# the reanalysis the section is measured with, and its sector means
+RECENT_CORE = os.path.join(DATA, "polar_core_recent.npz")
+RECENT_ERA5 = os.path.join(DATA, "polar_era5_recent.npz")
 # the EC46 keeps its own file
 EC46_CACHE = os.path.join(DATA, "polar_ec46_z.json")
+
+# How many days of analysis to show before the forecast starts - the same
+# fifteen the cap section shows, so the two charts line up.
+ANA_DAYS = 15
 
 
 def cache_for(tag):
@@ -75,6 +82,35 @@ def load_sector_clim():
     return None
 
 
+def load_recent_sectors():
+    """The reanalysis's own sector means -> (times, {sector: (n, nlev)}, name).
+
+    The CORe reanalysis is the one the cap section is measured with, and it
+    carries the sector means too, so the sector panels can open with the same
+    fifteen days of analysis the cap section opens with.  That is what makes
+    the two graphics line up: the same days, the same levels and the same
+    split line, so a reader can read a sector off one chart and find it on
+    the other.
+    """
+    for path, product in ((RECENT_CORE, "CORe"), (RECENT_ERA5, "ERA5")):
+        if not os.path.exists(path):
+            continue
+        try:
+            d = np.load(path, allow_pickle=True)
+        except Exception:
+            continue
+        if "sector_data" not in d:
+            continue
+        names = [str(x) for x in d["sector_names"]]
+        sd = d["sector_data"]
+        times = [str(t) for t in d["times"]]
+        out = {}
+        for i, sec in enumerate(names):
+            out[sec] = np.asarray(sd[i], float)
+        return times, out, product
+    return [], {}, "ERA5"
+
+
 def main(tag="gefsv12", label="NOAA GEFSv12", short=None):
     # `short` is the name the DESCRIPTOR line uses, when the title's name is
     # too long for it (the GEFS's title carries "(35-day extended)")
@@ -98,25 +134,48 @@ def main(tag="gefsv12", label="NOAA GEFSv12", short=None):
     times = [times[i] for i in order]
     levels = [int(x) for x in (rec.get("levels") or [])]
 
-    # the monthly climate, per sector, for each month of the series
-    anom = {}
+    # The forecast, one value per calendar day: the seasonal and the GEFS
+    # products are published at 12Z, but the ECMWF's sub-seasonal runs are
+    # at 00Z, so the hour is not the rule - the day is.
+    fc = {}
     for name, series in rec["sectors"].items():
-        if name not in clim:
-            print("   the %s sector has no climate yet" % name)
-            continue
         vals = np.array(series, float)[order]
-        # one value per calendar day, the earliest of it: the seasonal and
-        # the GEFS products are published at 12Z, but the ECMWF's
-        # sub-seasonal runs are at 00Z, so the hour is not the rule - the
-        # day is
         seen = {}
         for i, t in enumerate(times):
             seen.setdefault(t[:10], i)
         keep = sorted(seen.values())
-        times_s = [times[i] for i in keep]
-        vals = vals[keep]
-        if len(times_s) < 3:
+        fc[name] = ([times[i][:10] for i in keep], vals[keep])
+
+    # The analysis in front of it, from the same reanalysis the cap section
+    # is measured with.
+    rt, rv, _ana_name = load_recent_sectors()
+    rday = {}
+    for i, t in enumerate(rt):
+        rday.setdefault(t[:10], i)
+
+    first = min((v[0][0] for v in fc.values() if len(v[0])), default=None)
+    ana_days = sorted(d for d in rday if first and d < first)[-ANA_DAYS:]
+
+    # the monthly climate, per sector, for each month of the series
+    anom = {}
+    days = None
+    for name in sorted(set(list(fc.keys()) + list(rv.keys()))):
+        if name not in clim:
+            print("   the %s sector has no climate yet" % name)
             continue
+        if name not in fc or not fc[name][0]:
+            continue
+        fdays, fvals = fc[name]
+        # the days of the whole chart: the analysis first, then the forecast
+        if name in rv and ana_days:
+            all_days = ana_days + fdays
+            avals = rv[name][[rday[d] for d in ana_days]]
+        else:
+            all_days = fdays
+            avals = np.zeros((0, len(levels)))
+        if len(all_days) < 3:
+            continue
+        vals = np.vstack([avals, fvals]) if len(avals) else fvals
         # the monthly sector climate, as arrays, and then put on the days
         # of the series: a monthly climate applied to a daily series steps
         # at every month boundary and the step draws a seam across the
@@ -125,14 +184,14 @@ def main(tag="gefsv12", label="NOAA GEFSv12", short=None):
         mmean = np.array([np.asarray(clim[name][m][0], float)[:len(levels)]
                           for m in mlist])
         msig = np.array([np.asarray(clim[name][m][1], float)[:len(levels)]
-                          for m in mlist])
-        daily, dsig = daily_climate(times_s, mlist, mmean, msig)
+                         for m in mlist])
+        daily, dsig = daily_climate(all_days, mlist, mmean, msig)
         # the anomaly is NORMALISED: the climate's own standard deviation
         # for the day, so the two sectors and every level are on one scale
-        rows = [(vals[i] - daily[i]) / dsig[i] for i in range(len(times_s))]
+        rows = [(vals[i] - daily[i]) / dsig[i] for i in range(len(all_days))]
         anom[name] = np.array(rows, float)
-        times = times_s
-        vals = None
+        days = all_days
+
 
     if not anom:
         print("   no sector series could be put against the climate")
@@ -151,16 +210,29 @@ def main(tag="gefsv12", label="NOAA GEFSv12", short=None):
         bits.append(freq)
     if nmem:
         bits.append("%s members" % nmem)
-    bits.append("%d levels (10-1000 hPa)" % len(levels))
+    bits.append("%d levels (%d-%d hPa)" % (len(levels), min(levels), max(levels)))
     _c = ("CORe" if os.path.exists(CLIM_CORE) and not os.path.exists(CLIM_CDSDAILY)
           else "ERA5")
     bits.append("%s 1991-2020 sector climatology" % _c)
-    subtitle = ("the %s sector forecast from %s to %s · %s"
-                % (short, times[0][:10], times[-1][:10], " · ".join(bits)))
+    # the same opening the cap section has: the analysis first, then the
+    # forecast, so the two charts can be read against each other
+    # the forecast window, not the whole chart: the analysis days in front
+    # are named separately, exactly as the cap section names them
+    fc_first = fc[list(fc.keys())[0]][0][0][:10] if fc else days[0][:10]
+    fc_last = fc[list(fc.keys())[0]][0][-1][:10] if fc else days[-1][:10]
+    if ana_days:
+        subtitle = ("%d days of %s reanalysis · the %s sector forecast from "
+                    "%s to %s · %s"
+                    % (len(ana_days), _ana_name, short, fc_first,
+                       fc_last, " · ".join(bits)))
+    else:
+        subtitle = ("the %s sector forecast from %s to %s · %s"
+                    % (short, fc_first, fc_last, " · ".join(bits)))
 
     os.makedirs(OUT, exist_ok=True)
     path = os.path.join(OUT, "polar_sectors_%s.png" % tag)
-    plot_sector_sections(times, anom, levels, path, label_txt, subtitle,
+    plot_sector_sections(days, anom, levels, path, label_txt, subtitle,
+                         split=len(ana_days) if ana_days else None,
                          credit=credit_for(tag))
     print("   the figure: %s" % path)
     return path

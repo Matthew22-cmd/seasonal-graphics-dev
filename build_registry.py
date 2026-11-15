@@ -94,11 +94,13 @@ MODELS = {
     "gefsv12":         ("NOAA GEFSv12",
                         "NOAA GEFS v12 sub-seasonal ensemble \u00b7 35 days, from "
                         "the 00Z cycle, which is the one that carries the "
-                        "extended range \u00b7 the ensemble mean of the 24 members "
-                        "that are present at every one of those 35 days, so the "
-                        "mean does not change membership half way through the "
-                        "chart \u00b7 the polar cap's geopotential height anomaly "
-                        "on the same scale as the reanalysis"),
+                        "extended range \u00b7 the ensemble mean of all 31 "
+                        "members (the control and the thirty perturbations), "
+                        "which the archive serves at every one of those 35 "
+                        "days, so the mean does not change membership half "
+                        "way through the chart \u00b7 the polar cap's "
+                        "geopotential height anomaly on the same scale as the "
+                        "reanalysis"),
     "ec46":            ("ECMWF EC46",
                         "ECMWF sub-seasonal ensemble (EC46) \u00b7 101 members \u00b7 a "
                         "daily run with a 48-hour delay \u00b7 the whole 46-day "

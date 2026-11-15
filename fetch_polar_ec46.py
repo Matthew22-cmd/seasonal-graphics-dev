@@ -59,6 +59,7 @@ import json
 import os
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
 
 import numpy as np
@@ -189,6 +190,47 @@ def session():
     return s
 
 
+def live_jobs(s):
+    """-> the jobs the account has in the store, the live ones first."""
+    try:
+        r = s.get("%s/retrieve/v1/jobs?limit=20" % ECDS, timeout=60)
+        if r.status_code != 200:
+            return []
+        jobs = r.json().get("jobs") or []
+    except Exception:                                # noqa: BLE001
+        return []
+    live = [j for j in jobs if j.get("status") in
+            ("accepted", "queued", "running", "executing")]
+    return live
+
+
+# The account may hold this many jobs in the store at once.
+MAX_LIVE_JOBS = 2
+
+
+def wait_for_queue(s, room, tries=180):
+    """Wait until the account's queue has room for `room` MORE jobs.
+
+    The store refuses a request when the account already has too many jobs
+    waiting, and the refusal comes back as a job that is REJECTED.  A
+    dismissal does not free the slot at once, so the queue is watched rather
+    than assumed.
+
+    The jobs the account already holds INCLUDE the ones this run has
+    submitted and is waiting for, so the room that is wanted is the number
+    of jobs to ADD: the account's limit is a total, and a job of ours that
+    is already queued counts towards it exactly like any other.
+    """
+    for _ in range(tries):
+        live = live_jobs(s)
+        if len(live) + room <= MAX_LIVE_JOBS:
+            return True
+        print("   the queue holds %d job(s); waiting for room for %d more"
+              % (len(live), room), flush=True)
+        time.sleep(20)
+    return False
+
+
 def latest_run(s, tries=8):
     """The most recent ECMWF sub-seasonal run the archive holds.
 
@@ -230,6 +272,13 @@ def latest_run(s, tries=8):
                         if jid:
                             s.delete("%s/retrieve/v1/jobs/%s" % (ECDS, jid),
                                      timeout=30)
+                            # the dismissal is NOT immediate: until the store
+                            # has actually released the job, the probe is still
+                            # holding one of the account's two queue slots and
+                            # every real request is turned away with
+                            # "rejected".  So the queue is watched until the
+                            # probe is out of it.
+                            wait_for_queue(s, 1)
                     except Exception:                # noqa: BLE001
                         pass
                     if not extended:
@@ -406,7 +455,21 @@ def submit(s, run_date, run_time, weeks):
     return j.get("jobID") or j.get("processID")
 
 
-def wait(s, jid, tries=360):
+def wait(s, jid, tries=360, stall_limit=240):
+    """-> True when the job finishes.
+
+    The queue is congested and a job can sit 'accepted' for a long time.
+    A job that has not even STARTED after a while is not slow, it is
+    stuck, so the caller is told and the chunk is asked for again at a
+    size the archive has already answered at.
+
+    The stall limit is generous on purpose: the store's queue can sit on a
+    job for HOURS (one was still 'accepted' after two and a half hours),
+    and a limit of a couple of minutes threw that job away and asked for it
+    again, which only made the queue longer.
+    """
+    started = False
+    slow = 0
     for _ in range(tries):
         time.sleep(15)
         r = s.get("%s/retrieve/v1/jobs/%s" % (ECDS, jid), timeout=60)
@@ -417,6 +480,18 @@ def wait(s, jid, tries=360):
             return True
         if st in ("failed", "error", "rejected", "dismissed"):
             print("   the job is %s" % st, flush=True)
+            return False
+        if st in ("running", "executing"):
+            started = True
+            slow = 0
+            continue
+        # still 'accepted' or 'queued': it has not started
+        if started:
+            continue
+        slow += 1
+        if slow >= stall_limit:
+            print("   the job %s has not started after %d checks" %
+                  (jid, slow), flush=True)
             return False
     return False
 
@@ -441,11 +516,23 @@ def main():
               "asked of the archive.")
         print("   it is one tick in the web UI: %s" % LICENCE_URL)
         return
-    run_date, run_time, _ = latest_run(s)
-    if run_date is None:
-        print("   no ECMWF S4S run found in the last week")
-        return
-    print("   the S4S run: %s %s" % (run_date, run_time), flush=True)
+    # The run probe is itself a job, and the account's queue is small: every
+    # slot the probe takes is a slot the real chunks cannot use.  So the run
+    # can be given on the command line when it is known, and the probe is
+    # skipped.
+    forced = None
+    if "--run" in sys.argv:
+        forced = sys.argv[sys.argv.index("--run") + 1]
+    if forced:
+        run_date = date(int(forced[0:4]), int(forced[5:7]), int(forced[8:10]))
+        run_time = forced[11:16] + ":00"
+        print("   the S4S run: %s %s (given)" % (run_date, run_time), flush=True)
+    else:
+        run_date, run_time, _ = latest_run(s)
+        if run_date is None:
+            print("   no ECMWF S4S run found in the last week")
+            return
+        print("   the S4S run: %s %s" % (run_date, run_time), flush=True)
 
     st = json.load(open(STATE)) if os.path.exists(STATE) else {"jobs": []}
     out = json.load(open(OUT)) if os.path.exists(OUT) else {}
@@ -457,28 +544,88 @@ def main():
     # SAME member set, which is what a section wants (a mean whose membership
     # changes half way through is an artefact of the archive, not of the
     # atmosphere).
+    #
+    # FIVE days is the size the archive has answered at (51.8 MB for 101
+    # members): a ten-day request is twice that and the queue will not move
+    # it.  The chunks are asked for PARALLEL, two at a time, because the
+    # account may hold two queued jobs and one job on its own leaves the
+    # other slot empty for the whole run.
     CHUNK = 5
     if "--chunk-size" in sys.argv:
         CHUNK = int(sys.argv[sys.argv.index("--chunk-size") + 1])
+    PARALLEL = 2
+    if "--parallel" in sys.argv:
+        PARALLEL = int(sys.argv[sys.argv.index("--parallel") + 1])
+
+    # A chunk that is already in the store is ADOPTED, not asked for again.
+    # The store's queue can sit on a job for hours, and a second request
+    # for the same chunk only makes the queue longer (and takes the account's
+    # room away from the chunk that is already there).
+    adopted = {}
+    for j in live_jobs(s):
+        jid = j.get("jobID")
+        for rec in st["jobs"]:
+            if rec.get("job") == jid:
+                adopted[rec.get("chunk")] = jid
+    if adopted:
+        print("   adopting %d job(s) already in the store: %s"
+              % (len(adopted), ", ".join("chunk %d (job %s)"
+                                        % (c, adopted[c][:8])
+                                        for c in sorted(adopted))), flush=True)
+
+    pending = []
     for i in range(0, len(WEEKLY), CHUNK):
         weeks = WEEKLY[i:i + CHUNK]
         done = [j for j in st["jobs"]
                 if j.get("chunk") == i and j.get("status") == "decoded"]
         if done:
             continue
+        pending.append((i, weeks))
+    print("   %d chunks of %d days, %d at a time"
+          % (len(pending), CHUNK, PARALLEL), flush=True)
+
+    def run_chunk(i, weeks):
+        """One chunk, end to end.  -> (chunk, job, the decoded values)."""
         print("   the weeks %s ..." % (weeks[0] + " to " + weeks[-1]), flush=True)
-        jid = submit(s, run_date, run_time, weeks)
-        print("   the job %s" % jid, flush=True)
+        jid = adopted.get(i)
+        if jid:
+            print("   the job %s (adopted from the store)" % jid, flush=True)
+        else:
+            jid = submit(s, run_date, run_time, weeks)
+            print("   the job %s" % jid, flush=True)
         if not wait(s, jid):
+            # a job that will not start is dismissed, so it does not sit in
+            # the queue holding a slot for the rest of the run
+            try:
+                s.delete("%s/retrieve/v1/jobs/%s" % (ECDS, jid), timeout=30)
+                print("   the job %s dismissed" % jid, flush=True)
+            except Exception:                        # noqa: BLE001
+                pass
+            return i, jid, None
+        path = os.path.join(DATA, "_ec46_%d.grib" % i)
+        download(s, jid, path)
+        vals, svals, nmem = read_grib(path)
+        os.remove(path)
+        return i, jid, (vals, svals, nmem)
+
+    results = []
+    for k in range(0, len(pending), PARALLEL):
+        batch = pending[k:k + PARALLEL]
+        # the store turns a request away when the account already has too many
+        # jobs waiting, so the room is made first
+        wait_for_queue(s, len(batch))
+        with ThreadPoolExecutor(max_workers=len(batch)) as ex:
+            for res in ex.map(lambda a: run_chunk(*a), batch):
+                results.append(res)
+
+    for i, jid, got in results:
+        if got is None:
             st["jobs"].append({"chunk": i, "job": jid, "status": "failed"})
             with open(STATE + ".tmp", "w") as f:
                 json.dump(st, f, indent=1)
             os.replace(STATE + ".tmp", STATE)
             continue
-        path = os.path.join(DATA, "_ec46_%d.grib" % i)
-        download(s, jid, path)
-        vals, svals, nmem = read_grib(path)
-        os.remove(path)
+        vals, svals, nmem = got
         rec = out.setdefault(TAG, {"times": [], "values": [],
                                    "sectors": {}, "levels": list(LEVELS)})
         # only the times that carry every level of BOTH the cap and the two

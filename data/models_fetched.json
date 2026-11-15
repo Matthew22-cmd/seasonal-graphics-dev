@@ -3,7 +3,8 @@
   "init": "2026-11",
   "members": 99,
   "name": "BOM ACCESS-S2",
-  "note": "sea surface temperature only so far - the snowfall and the 10 hPa wind are still queued"
+  "note": "sea surface temperature only so far - the snowfall and the 10 hPa wind are still queued",
+  "daily_wind": true
  },
  "c3s-multi": {
   "init": "2026-11",
@@ -250,7 +251,8 @@
   "init": "2026-11",
   "members": 155,
   "name": "JMA CPS4",
-  "note": "sea surface temperature only so far - the snowfall and the 10 hPa wind are still queued"
+  "note": "sea surface temperature only so far - the snowfall and the 10 hPa wind are still queued",
+  "daily_wind": true
  },
  "meteo-france-s9": {
   "centre": "meteo_france",
@@ -319,7 +321,7 @@
   "expected_leads": 6,
   "init": "2026-11",
   "leads": 6,
-  "members": 60,
+  "members": 62,
   "name": "UKMO GloSeas6-GC5.1",
   "probe_date": "2026-11-10",
   "snow": {
@@ -344,6 +346,7 @@
     792,
     816
    ]
-  }
+  },
+  "daily_wind": true
  }
 }

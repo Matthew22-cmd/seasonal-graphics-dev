@@ -509,23 +509,16 @@ def plot_section(times, norm, levels, out_path, title, subtitle,
     # The panel is drawn in one piece.  It used to be drawn in three, each
     # with its own shading, and a contourf only fills the columns it is
     # given - so the day before the "now" line was never filled and the
-    # chart carried a white stripe down it.  The reanalysis is still picked
-    # out: it is drawn a second time, a little stronger, over the columns
-    # it covers.
+    # chart carried a white stripe down it.
+    #
+    # The forecast side was drawn at 62% opacity over the reanalysis, which
+    # laid a grey wash over the anomalies on the right of the split line and
+    # made them read as weaker than they are.  Both sides are now drawn at
+    # full strength: the split line and the two labels above the panel are
+    # what tell the reader which half is which.
     mid = today if (today is not None and 0 < today < n) else n
-    if split is not None and 0 < split < n:
-        # what happened, at full strength; what the model says, lighter.
-        # The last column is shared with the panel below it, so the two meet
-        # with no gap.
-        ax.contourf(x, lev, z, levels=edges, cmap=cmap,
-                    norm=norm_c, extend="both", alpha=0.62)
-        ax.contourf(x[:split + 1], lev, z[:, :split + 1], levels=edges,
-                    cmap=cmap, norm=norm_c, extend="both", alpha=1.0)
-    else:
-        # no reanalysis in front of the run: the model's own forecast is
-        # the whole panel, and it is drawn at full strength.
-        ax.contourf(x, lev, z, levels=edges, cmap=cmap,
-                    norm=norm_c, extend="both", alpha=1.0)
+    ax.contourf(x, lev, z, levels=edges, cmap=cmap,
+                norm=norm_c, extend="both", alpha=1.0)
 
     ax.set_yscale("log")
     ax.set_ylim(1000.0, 10.0)
@@ -879,14 +872,11 @@ def plot_sector_sections(times, sectors, levels, out_path, title, subtitle,
         z = np.asarray(sectors[name], float)[:, order_l].T     # (nlev, ntime)
 
         mid = n
-        if split is not None and 0 < split < n:
-            ax.contourf(x, lev, z, levels=edges, cmap=cmap,
-                        norm=norm_c, extend="both", alpha=forecast_alpha)
-            ax.contourf(x[:split + 1], lev, z[:, :split + 1], levels=edges,
-                        cmap=cmap, norm=norm_c, extend="both", alpha=1.0)
-        else:
-            ax.contourf(x, lev, z, levels=edges, cmap=cmap,
-                        norm=norm_c, extend="both", alpha=1.0)
+        # The forecast side is drawn at full strength, like the cap section:
+        # a partial-opacity overlay laid a grey wash over the anomalies and
+        # made the forecast read as weaker than it is.
+        ax.contourf(x, lev, z, levels=edges, cmap=cmap,
+                    norm=norm_c, extend="both", alpha=1.0)
 
         ax.set_yscale("log")
         ax.set_ylim(1000.0, 10.0)
