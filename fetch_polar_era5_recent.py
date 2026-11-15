@@ -41,25 +41,50 @@ def requests_for(d0, d1, partial_days=7):
     archive answers the whole request with "no data" if it is).  The last
     month of the window is therefore asked for day by day up to
     ``partial_days``, which is what the reanalysis latency allows for.
+
+    The days asked for are the days of the window: a window that starts on
+    the 17th asks for the 17th onwards and not for the first days of the
+    month, and the label of the request is that same list.
     """
     import calendar
     out = []
     d = d0
     while d <= d1:
         nd = calendar.monthrange(d.year, d.month)[1]
-        last_in_month = min(nd, (d1 - d).days + 1)
-        full = last_in_month == nd
-        ndays = nd if full else min(last_in_month, partial_days)
-        last_day = (date(d.year, d.month, nd) if full
-                    else d + timedelta(days=ndays - 1))
-        out.append({
-            "year": ["%04d" % d.year],
-            "month": ["%02d" % d.month],
-            "day": ["%02d" % i for i in range(1, ndays + 1)],
-            "first": d.isoformat(),
-            "last": last_day.isoformat(),
-            "full": full,
-        })
+        end_of_month = date(d.year, d.month, nd)
+        last = min(end_of_month, d1)
+        last_in_month = last.day
+        full = (last == end_of_month)
+        # the window's OWN days in this month: a window that starts on the
+        # 17th asks for the 17th onwards and not for the first days of the
+        # month.  The days at the very end of the window may not be in the
+        # archive yet (the reanalysis lags by a few days) - that request
+        # fails and is skipped, and the section is drawn with the days
+        # that did come.
+        days = list(range(d.day, last_in_month + 1))
+        if not full:
+            # the tail of the window may not be in the archive yet (the
+            # reanalysis lags by a few days), so it is asked for in chunks:
+            # a request for days the archive does not have fails as a whole
+            for i in range(0, len(days), partial_days):
+                chunk = days[i:i + partial_days]
+                out.append({
+                    "year": ["%04d" % d.year],
+                    "month": ["%02d" % d.month],
+                    "day": ["%02d" % x for x in chunk],
+                    "first": "%04d-%02d-%02d" % (d.year, d.month, chunk[0]),
+                    "last": "%04d-%02d-%02d" % (d.year, d.month, chunk[-1]),
+                    "full": False,
+                })
+        else:
+            out.append({
+                "year": ["%04d" % d.year],
+                "month": ["%02d" % d.month],
+                "day": ["%02d" % i for i in days],
+                "first": "%04d-%02d-%02d" % (d.year, d.month, days[0]),
+                "last": "%04d-%02d-%02d" % (d.year, d.month, days[-1]),
+                "full": True,
+            })
         d = date(d.year, d.month, 1) + timedelta(days=nd)
     return out
 

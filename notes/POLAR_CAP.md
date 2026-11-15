@@ -294,3 +294,224 @@ through.
 * the sector means (North Pacific 120-240E, North Atlantic 300-60E) come out
   of the same pass over the GRIB as the polar-cap mean, and the sector's own
   1991-2020 climate comes from the CDS 30-year monthly means.
+
+## 15 Nov 2026 - the EC46 as it actually is, and the cold bias on the reanalysis side
+
+### The EC46 is 101 members, a daily run, and its GRIB is in METRES
+
+* **101 members**, not 51.  The run of 2026-11-13 00Z answered with 101
+  members at every one of the first five days, and the run is **daily**
+  with a **48-hour delay** (so the run available on 15 Nov is the 13 Nov
+  one).  The chart's descriptor says so: *"2026-11-13 00Z run - daily -
+  101 members"*.
+* **The S2S GRIB carries the geopotential HEIGHT in metres ("gh"), not the
+  geopotential in m2/s2 ("z").**  The 10 hPa values came out at ~30,250 -
+  a number that is a HEIGHT, and the chart's own guard ("the values must
+  be a few hundred thousand m2/s2") refused the series.  Every value is
+  now multiplied by **9.80665** in `fetch_polar_ec46.read_grib`, exactly as
+  `fetch_polar_gefs.py` does with the GEFS's HGT.
+* The S2S fields are initialised at 00Z, so **validityDate/validityTime**
+  is the pair that gives the calendar day; and the series is one value per
+  calendar day (the earliest of the day), so the 00Z runs are kept instead
+  of being dropped by a "12Z only" filter.
+* The member set is the one present at **every** time of the file, and the
+  number on the chart is the **fewest** members behind any of its days.
+
+### The cold bias on the reanalysis side is NOT the atmosphere
+
+Measured on 15 Nov 2026, the polar-cap 10 hPa geopotential height:
+
+| source | value on 13-14 Nov 2026 |
+|---|---|
+| ARCO native store, the recent 91 days | ~291,000 m2/s2 |
+| ARCO native store, its own 1991-2020 climate (November) | 292,148 m2/s2 |
+| ARCO reduced store, its daily climate (13 Nov) | 290,880 m2/s2 |
+| CDS **monthly means** (November) | 279,958 m2/s2 |
+| NOAA GEFSv12, day 1 of its forecast | 295,904 m2/s2 |
+| ECMWF EC46, day 1 of its run | 296,663 m2/s2 |
+
+Two things stand out:
+
+1. **The two ARCO stores agree with each other and disagree with both
+   models by about 4,500 m2/s2 (450 m) at 10 hPa.**  Day 1 of a forecast
+   is the analysis, so the analysis and the models should agree; the
+   ERA5-derived numbers are the ones that sit apart.  That is what put the
+   deep blue on the left of the section, and it is not an SSW signal.
+2. **The CDS's MONTHLY means are 12,000 m2/s2 colder still** and their
+   sigma is smaller than anything else (427 m2/s2 in October, where the
+   ARCO native store has 710 and the reduced store 930).  They are not the
+   reference either.
+
+So the climate the chart is measured against has to come from the **CDS
+DAILY** reanalysis - the same product and the same grid as the reanalysis
+half, with the real ERA5's spread.  `fetch_polar_clim_cdsdaily.py` builds
+it from the 15th of each month of 1991-2020 in **one** request (the CDS
+shares the day list across the years), and both the section and the sector
+panels prefer it over the ARCO native store's climate.
+
+### The naming
+
+The user asked (15 Nov 2026) that the reanalysis side is not called "the
+ERA5 half" - that is a description of its place in the figure, not a name.
+It is the **ERA5 reanalysis** on the chart, and it is the **ERA5 analysis**
+in the running text.
+
+## 15 Nov 2026 - the ERA5 in ARCO's store is 600 m too low, and it MISSES the SSW
+
+The "excess cold" on the reanalysis side of the section is not the
+atmosphere.  Four independent products were put side by side at 10 hPa over
+the polar cap, and the ARCO store is the odd one out:
+
+| source | 13-14 Nov 2026 | what it is |
+|---|---|---|
+| ARCO's ERA5 (the store the chart was using) | ~290,900 m2/s2 | ARCO's own 37-level vertical interpolation |
+| ECMWF's IFS analysis (the EC46's **control member**) | 296,661 | the analysis itself |
+| NOAA's GEFSv12, day 1 of its forecast | 295,904 | the GFS analysis + 12 h |
+| NOAA's **CORe** reanalysis (12 Nov) | 296,902 | a conventional-observation reanalysis |
+
+The difference grows with height and vanishes in the troposphere: +5,170 at
+10 hPa, +982 at 100 hPa, +58 at 300 hPa, +20 at 400 hPa.  That is the
+signature of a temperature difference of about 7 K in the 100-10 hPa layer,
+which is what a wrong vertical interpolation looks like.
+
+### The gap is not a constant - it is a sudden stratospheric warming
+
+The ARCO value and the CORe value were differenced day by day over the
+40 days to 13 Nov 2026:
+
+| date | the gap (CORe - ARCO) |
+|---|---|
+| 5 Oct | +1,053 |
+| 17 Oct | +1,385 |
+| 25 Oct | +2,115 |
+| 29 Oct | +3,403 |
+| 1 Nov | +4,891 |
+| 4-6 Nov | +6,875 to +7,505 |
+| 13 Nov | +5,290 |
+
+The ARCO value keeps falling through late October and early November while
+the CORe's **rises** - the polar cap height stops its seasonal decline and
+turns up.  That is a sudden stratospheric warming, and **ARCO's ERA5 does
+not have it**.  It shows the opposite sign, which is what put the deep blue
+on the left of the section.
+
+### What each product is good for
+
+* **NOAA's CORe** - on a public GCS bucket with wgrib2 inventories:
+  `https://storage.googleapis.com/noaa-nws-ncep-core/grib/day/pgb/YYYY/MM/pgb.YYYYMMDD`
+  with a `.idx` next to it, so the twelve HGT messages the section needs are
+  fetched **by byte range** (about 1 MB a day out of a 35 MB file) - no
+  queue, no key.  `fetch_polar_core.py` does it.
+  **But CORe's historical files cannot carry the climate**: its 15th of
+  November reads 289,177 (1991), 291,115 (2005), 288,264 (2015), 289,574
+  (2021) and 290,798 (2024) - about 6,000 m2/s2 below its own recent files.
+  Its recent stream and its look-alike archive are not the same climate, so
+  normalising the recent CORe against a CORe climate gives +4 sigma and a
+  chart that is wrong in the other direction.  CORe is a **cross-check**,
+  not a replacement.
+* **The CDS's native ERA5** is the right product for both halves: the ERA5
+  archive *is* the IFS analysis, so it must agree with the EC46's control
+  member.  The monthly means file in this repo (`polar_cap_clim_monthly.npz`)
+  is 4% low in the stratosphere and is not to be trusted; the climate is
+  rebuilt from the CDS **daily** product by `fetch_polar_clim_cdsdaily.py`
+  (one request: the CDS shares the day list across the years).
+* **The ARCO stores** - both the native and the reduced one - are ARCO's own
+  interpolation, and both are low in the stratosphere.  Neither may be used
+  for the section.
+
+### A correction, if the CDS stays in the queue
+
+The ARCO-to-truth offset is measured (40 days x 12 levels against the CORe
+above) and is smooth in height.  Correcting the ARCO data and the ARCO
+climate by that measured per-level offset is a proper calibration, and it
+keeps the two halves of the section on one scale.  It is the fallback if the
+CDS request does not come through.
+
+### The fourth opinion: NCEP's Reanalysis 1, through PSL's subset service
+
+PSL serves R1 through a NetCDF subset service, so the 1991-2020 record
+comes down without a queue and without a key:
+
+    https://psl.noaa.gov/thredds/ncss/grid/Datasets/ncep.reanalysis/Dailies/pressure/hgt.YYYY.nc
+    ?var=hgt&north=90&west=0&east=357.5&south=60&horizStride=1
+    &time_start=YYYY-11-15T00:00:00Z&time_end=YYYY-11-15T23:59:59Z
+    &level=10&30&50&100&200&300&400&500&700&850&925&1000&accept=netcdf
+
+(`fetch_polar_clim_r1.py` does it, thirty requests, the 15th of each month
+of each year.)  The NCSS takes **one** time range per request - a comma
+separated list of ranges is refused - and the R1 daily files stop on
+17 March 2026, so R1 can be the climate but never the reanalysis.  The
+NCEP/DOE Reanalysis II stops on 28 February 2026 as well.
+
+R1's 1991-2020 climate and the ARCO native climate, November, 10 hPa:
+
+| | the 10 hPa mean | the sigma |
+|---|---|---|
+| R1 | 291,583 m2/s2 | 1,444 |
+| the ARCO native store | 292,148 | 2,112 |
+| the CORe's look-alike archive | 290,490 | 1,682 |
+
+and they agree at **every** level to within about 500 m2/s2 (at 30 hPa
+they agree to 1).  So the reanalysis archives agree with each other, and
+the three forecast products - the ECMWF's own IFS analysis, NOAA's GEFSv12
+and NOAA's CORe - agree with each other about 5,000 m2/s2 above them at
+10 hPa.  The ERA5 archive and the IFS analysis are the same model, so
+that gap is either the archives' vertical interpolation or the forecast
+products' level, and the CDS's native ERA5 will say which.
+
+The **sigma** is the other half of the story.  The ARCO native store's
+October sigma at 10 hPa is 710 m2/s2 where R1's is 740 - the same - but in
+November the ARCO's is 2,112 against R1's 1,444.  A muted sigma makes an
+anomaly too big, and the deep blue on the left of the section was mostly
+the **missing stratospheric warming**, not the sigma: the ARCO value keeps
+falling through late October while the CORe's turns up.
+
+### The ARCO values in the section were also mislabelled
+
+`fetch_polar_era5_recent.py` asked the CDS for the **first** days of a
+month and labelled the answer with the **last** days of the window: a
+window that starts on the 17th asked for the 1st to the 7th and called it
+the 17th to the 23rd.  The day list is now the window's own days, and the
+tail of the window is asked for in chunks, because a request for days the
+archive does not have yet (the reanalysis lags by a few days) fails whole.
+
+### The section now runs on NOAA's CORe (the FV3-GFS reanalysis)
+
+The reanalysis half of the section is **CORe** - NOAA CPC's Conventional
+Observation Reanalysis, which is built on the FV3-GFS model - and it is
+both the data and the climate, so the two halves of every chart are
+measured against one system.
+
+CORe is free and **queue-free**.  The daily files are at
+
+    https://storage.googleapis.com/noaa-nws-ncep-core/grib/day/pgb/YYYY/MM/pgb.YYYYMMDD.grb
+
+with a sibling `.idx` (the wgrib2 inventory), so only the twelve HGT
+messages are fetched, by byte range - about 1 MB a day out of a 35 MB file.
+CPC's own tree is at
+
+    https://ftp.cpc.ncep.noaa.gov/CORe/CDAS_clone_temporary/
+
+and it is the **same system**: the clone's 1991-11-15 12Z gives 289,812
+m2/s2 at 10 hPa where the bucket's daily mean for that day gives 289,177
+(the difference is the daily mean against the 12Z value).  So the bucket's
+history and its recent files are one product, and the climate built from
+the bucket's daily files is the right climate for the bucket's recent
+files.  The clone's tree goes back to 1950 and has 6-hourly pgb files;
+the bucket's daily files are the ones used here.
+
+**The CORe's scale and the models agree.**  On 13 November 2026 at 10 hPa:
+the CORe 296,257; the EC46's control member (the IFS analysis) 296,661;
+the GEFSv12 day 1 295,904; the ARCO-store ERA5 290,966.  The CORe's
+1991-2020 November mean is 290,490 with a sigma of 1,682, so the recent
+state is about +3.4 sigma and the models sit at +3.6 sigma - the two
+halves of the chart agree to within 0.2 sigma, and the late-October 2026
+stratospheric warming is visible as a warm pulse at the left of the
+section instead of the deep blue the ARCO store drew.
+
+**A bug worth remembering.**  `sector_mean()` takes the longitudes, and
+`fetch_polar_core.py` was passing the **latitudes** (`la2[0, :]`) in that
+slot, so the sector mask was meaningless and every sector mean came back
+NaN - the sector panels came out blank.  The CORe's sector means are now
+real: the North Atlantic 290,093 and the North Pacific 301,665 against the
+cap's 296,257 on 13 November 2026.

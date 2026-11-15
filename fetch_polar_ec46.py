@@ -67,7 +67,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(HERE, "data")
 sys.path.insert(0, HERE)
 
-from polar_cap import SECTORS, sector_mean, zonal_mean  # noqa: E402
+from polar_cap import G0, SECTORS, sector_mean, zonal_mean  # noqa: E402
 
 ECDS = "https://ecds.ecmwf.int/api"
 EXEC = "%s/retrieve/v1/processes/s2s-forecasts/execute" % ECDS
@@ -260,6 +260,10 @@ def read_grib(path):
     The sector means are the same reduction over one longitude sector, so
     the Atlantic and the Pacific can be drawn separately.
 
+    The GRIB carries the geopotential HEIGHT in metres ("gh"), not the
+    geopotential in m2/s2 ("z"), so every value is multiplied by 9.80665
+    here - the same thing fetch_polar_gefs.py does with the GEFS's HGT.
+
     The file carries every member at the same valid time and level, so the
     member values are AVERAGED: the section shows the ensemble mean.  (A
     reader that kept the last message it saw would draw ONE member and call
@@ -320,11 +324,11 @@ def read_grib(path):
                     mem = int(eccodes.codes_get(gid, "number") or 0)
                 except Exception:                     # noqa: BLE001
                     mem = 0
-                cap = zonal_mean(v, lats)
+                cap = zonal_mean(v, lats) * G0
                 acc[key][lev][mem] = cap
                 for name, (a, b) in SECTORS.items():
                     sacc[key][name][lev][mem] = \
-                        sector_mean(v, lats, lon2d[0, :], a, b)
+                        sector_mean(v, lats, lon2d[0, :], a, b) * G0
             except Exception:                         # noqa: BLE001
                 pass
             finally:
@@ -504,6 +508,10 @@ def main():
             for name, srow in srows.items():
                 rec.setdefault("sectors", {}).setdefault(name, []).append(srow)
         rec["run"] = "%s %sZ" % (run_date, run_time[:2])
+        # the ECMWF's sub-seasonal set is a DAILY run with a 48-hour delay:
+        # the chart says so, because a reader comparing it with a 35-day
+        # GEFS needs to know it
+        rec["frequency"] = "daily"
         # the members behind the series: the FEWEST that came back for any of
         # the days, so the number on the chart is the number behind every day
         if keep:
@@ -521,6 +529,7 @@ def main():
                 cache = json.load(f)
         cache[TAG] = {"times": rec["times"], "values": rec["values"],
                       "levels": list(LEVELS), "run": rec["run"],
+                      "frequency": rec.get("frequency", "daily"),
                       "members": rec.get("members", 0)}
         if rec.get("sectors"):
             cache[TAG]["sectors"] = rec["sectors"]

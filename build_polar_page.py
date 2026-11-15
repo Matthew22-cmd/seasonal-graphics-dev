@@ -12,7 +12,7 @@ itself, from the stratosphere down to the surface.
 
 Two kinds of chart live on the page:
 
-  * the ERA5 reanalysis of the last 90 days, in front of the model's own
+  * the CORe reanalysis of the last 15 days, in front of the model's own
     forecast - what actually happened, and what might happen;
   * the seasonal sections, one per model, built from the C3S sub-daily
     archive, which run to the end of each model's own run.
@@ -108,17 +108,19 @@ def polar_block(reg=None):
   <p class="lead">A time-height section of the polar cap: the area-weighted
   mean geopotential height from 60&deg;N to the pole, on a set of pressure
   levels, as a <strong>normalized</strong> anomaly &mdash; in standard
-  deviations of ERA5&rsquo;s own 1991&ndash;2020 climate. Normalising puts
-  every level on the same footing, so the stratosphere and the troposphere
-  can be read on one scale. The pressure axis is logarithmic, so the
-  stratosphere at the top has the room it needs, and the section runs down
-  to the surface at the bottom.</p>
-  <p class="lead">The left of the dashed line is <strong>ERA5
-  reanalysis</strong> &mdash; what actually happened, up to the model&rsquo;s
-  own run. The right is the <strong>forecast</strong> &mdash; what might
-  happen, running to the end of that model&rsquo;s own run. The reanalysis
-  and the forecast are on the same scale and the same colour bar, so the
-  two halves can be read against each other.</p>
+  deviations of the CORe reanalysis&rsquo;s own 1991&ndash;2020 climate.
+  Normalising puts every level on the same footing, so the stratosphere and
+  the troposphere can be read on one scale. The pressure axis is logarithmic,
+  so the stratosphere at the top has the room it needs, and the section runs
+  down to the surface at the bottom.</p>
+  <p class="lead">The left of the dashed line is <strong>CORe
+  reanalysis</strong> &mdash; NOAA&rsquo;s Conventional Observation
+  Reanalysis, which is built on the FV3-GFS model, and it is what actually
+  happened, up to the model&rsquo;s own run. The right is the
+  <strong>forecast</strong> &mdash; what might happen, running to the end of
+  that model&rsquo;s own run. The reanalysis and the forecast are on the same
+  scale and the same colour bar, so the two halves can be read against each
+  other.</p>
   <div class="picker">
     <label for="polarSel">Model</label>
     <select id="polarSel" class="ctrl">%s</select>

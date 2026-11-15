@@ -100,9 +100,10 @@ MODELS = {
                         "chart \u00b7 the polar cap's geopotential height anomaly "
                         "on the same scale as the reanalysis"),
     "ec46":            ("ECMWF EC46",
-                        "ECMWF sub-seasonal ensemble (EC46) \u00b7 51 members \u00b7 a "
-                        "46-day run, so this section covers the first six weeks of "
-                        "the run rather than whole seasons. The polar-cap "
+                        "ECMWF sub-seasonal ensemble (EC46) \u00b7 101 members \u00b7 a "
+                        "daily run with a 48-hour delay \u00b7 the whole 46-day "
+                        "extended range, so this section covers the run to its "
+                        "end rather than whole seasons. The polar-cap "
                         "geopotential height is read from ECMWF's own climate "
                         "store, which carries ten pressure levels rather than "
                         "the twelve the seasonal archive carries."),

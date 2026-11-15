@@ -30,6 +30,9 @@ from ecmwf_credit import credit_for  # noqa: E402
 OUT = os.path.join(HERE, "output", "polar_cap")
 PROFILES = os.path.join(DATA, "era5_polarcap_profiles.npz")
 RECENT = os.path.join(DATA, "polar_era5_recent.npz")
+# NOAA's CORe reanalysis, which the section is measured with: the ERA5 in
+# ARCO's own store is about 600 m too low at 10 hPa over the polar cap.
+RECENT_CORE = os.path.join(DATA, "polar_core_recent.npz")
 MODEL_CACHE = os.path.join(DATA, "polar_model_z.json")
 # the EC46 is a separate product and lives in its own file
 EC46_CACHE = os.path.join(DATA, "polar_ec46_z.json")
@@ -49,6 +52,22 @@ CLIM_NATIVE = os.path.join(DATA, "polar_cap_clim_native.npz")
 # matches the reanalysis the chart draws.  It is preferred over the
 # daily one whenever it is there; see fetch_polar_clim_monthly.py.
 CLIM_MONTHLY = os.path.join(DATA, "polar_cap_clim_monthly.npz")
+# the climatology built from the CDS DAILY reanalysis - the 15th of each
+# month of 1991-2020, on the same product and the same grid as the
+# reanalysis half.  This is the one the chart is measured against:
+# the ARCO native store mutes the stratospheric variability (its October
+# sigma at 10 hPa is 710 m2/s2 where the real ERA5's is about 930), and
+# an anomaly divided by a sigma that is too small comes out too big - the
+# deep blue on the left of the chart was the climate, not the atmosphere.
+# The CDS MONTHLY means are not the answer either: they come out about
+# 11,000 m2/s2 colder in the stratosphere than both ARCO stores and than
+# the models, and their sigma is smaller still.
+CLIM_CDSDAILY = os.path.join(DATA, "polar_cap_clim_cdsdaily.npz")
+# the climate built from NOAA's CORe reanalysis: the same product as the
+# reanalysis half, and CORe assimilates no satellite radiances, so its
+# record has no jumps at the satellite transitions - which is what a
+# 1991-2020 climatology must not have.
+CLIM_CORE = os.path.join(DATA, "polar_cap_clim_core.npz")
 
 # How many days of ERA5 analysis to show before the forecast starts.
 #
@@ -59,12 +78,13 @@ CLIM_MONTHLY = os.path.join(DATA, "polar_cap_clim_monthly.npz")
 ANA_DAYS = 15
 
 
-def load_clim_monthly():
+def load_clim_monthly(path=None):
     """The monthly climatology -> (months, levels, mean, sigma), or None."""
-    if not os.path.exists(CLIM_MONTHLY):
+    path = path or CLIM_MONTHLY
+    if not os.path.exists(path):
         return None
     try:
-        d = np.load(CLIM_MONTHLY, allow_pickle=True)
+        d = np.load(path, allow_pickle=True)
     except Exception:
         return None
     if "mean" not in d:
@@ -133,32 +153,41 @@ def build_clim():
 
 
 def load_recent():
-    """The ERA5 reanalysis in front of the forecast -> (times, values, levels).
+    """The reanalysis in front of the forecast -> (times, values, levels).
 
     The file is checked for signs of being synthetic: the polar-cap mean
     geopotential height is a positive number of a few hundred thousand m2/s2
     at 10 hPa, so a file whose 10 hPa values are near zero, or that holds
     fewer days than the window, is refused rather than drawn.
+
+    CORe comes first: the ERA5 in ARCO's own store is about 600 m too low
+    at 10 hPa over the polar cap (it is ARCO's own vertical interpolation,
+    and the ECMWF's own IFS analysis and NOAA's GEFS both disagree with it),
+    so the reanalysis half is measured with NOAA's CORe reanalysis, which
+    needs no queue and agrees with the models.  The ERA5 file is the
+    fallback.
     """
-    if not os.path.exists(RECENT):
-        return [], np.zeros((0, len(LEVELS))), {}
-    d = np.load(RECENT, allow_pickle=True)
-    times = [str(t) for t in d["times"]]
-    vals = np.asarray(d["values"], float)
-    levels = [int(x) for x in (d["levels"] if "levels" in d else LEVELS)]
-    if len(times) < 20:
-        # too few days to draw a section: the reanalysis half is simply left
-        # out.  It must NOT raise, or a partly fetched file would stop the
-        # whole site from being published.
-        print("   the recent ERA5 holds only %d days - the section is drawn "
-              "without the reanalysis half" % len(times))
-        return [], np.zeros((0, len(LEVELS))), {}
-    i10 = levels.index(10) if 10 in levels else 0
-    if not np.all(np.isfinite(vals[:, i10])) or vals[:, i10].max() < 1e5:
-        raise ValueError("the recent ERA5 file does not hold real polar-cap "
-                         "geopotential heights (the 10 hPa values are %s)"
-                         % vals[:, i10][:3])
-    return times, vals, {"levels": levels, "era5": True}
+    for path, name in ((RECENT_CORE, "CORe"), (RECENT, "ERA5")):
+        if not os.path.exists(path):
+            continue
+        d = np.load(path, allow_pickle=True)
+        times = [str(t) for t in d["times"]]
+        vals = np.asarray(d["values"], float)
+        levels = [int(x) for x in (d["levels"] if "levels" in d else LEVELS)]
+        if len(times) < 20:
+            # too few days to draw a section: the reanalysis half is simply
+            # left out.  It must NOT raise, or a partly fetched file would
+            # stop the whole site from being published.
+            print("   the recent %s holds only %d days - the section is "
+                  "drawn without the reanalysis half" % (name, len(times)))
+            return [], np.zeros((0, len(LEVELS))), {}
+        i10 = levels.index(10) if 10 in levels else 0
+        if not np.all(np.isfinite(vals[:, i10])) or vals[:, i10].max() < 1e5:
+            raise ValueError("the recent %s file does not hold real polar-cap "
+                             "geopotential heights (the 10 hPa values are %s)"
+                             % (name, vals[:, i10][:3]))
+        return times, vals, {"levels": levels, "name": name}
+    return [], np.zeros((0, len(LEVELS))), {}
 
 
 def load_series(path, tag):
@@ -181,8 +210,14 @@ def load_series(path, tag):
     order = np.argsort(times)
     times = [times[i] for i in order]
     vals = vals[order]
-    # keep only the 12Z values: one per calendar day
-    keep = [i for i, t in enumerate(times) if t.endswith("12") or len(t) == 10]
+    # one value per calendar day.  The seasonal and the GEFS products are
+    # published at 12Z, but the ECMWF's sub-seasonal runs are at 00Z, so the
+    # hour is not the rule - the day is.  The earliest value of each day is
+    # the one that is kept.
+    seen = {}
+    for i, t in enumerate(times):
+        seen.setdefault(t[:10], i)
+    keep = sorted(seen.values())
     times = [times[i] for i in keep]
     vals = vals[keep]
     if len(times) < 3:
@@ -201,30 +236,36 @@ def main(tag="ecmwf-seas5", label="ECMWF SEAS5", short=None):
     # `short` is the name the DESCRIPTOR line uses, when the title's name is
     # too long for it (the GEFS's title carries "(35-day extended)")
     short = short or label
-    # 1. the climatology.  The monthly one, in the native ERA5 convention,
-    # is the one that matches the data; the daily one built from ARCO's
-    # reduced store is kept only as a fallback.
-    # the climate the chart is measured against: the one built from the
-    # same store as the reanalysis half.  The CDS's monthly means are the
-    # fallback - they are the same ERA5 on the same grid, but they came out
-    # about 10 K colder in the stratosphere.
-    nat = load_clim_native()
-    if nat is not None:
-        clim = nat[0]
-        kind = "native"
+    # 1. the climatology.  The one that comes first is the one built from
+    # the CDS DAILY reanalysis: the same product and the same grid as the
+    # reanalysis half, with the real ERA5's spread.  The ARCO native store
+    # comes next (it mutes the stratospheric variability), the CDS monthly
+    # means after that, and the reduced store's daily climate last.
+    clim = load_clim_monthly(CLIM_CDSDAILY)
+    if clim is not None:
+        kind = "cds-daily"
     else:
-        clim_m = load_clim_monthly()
-        if clim_m is not None:
-            clim = clim_m
-            kind = "monthly"
+        clim = load_clim_monthly(CLIM_CORE)
+    if clim is not None:
+        kind = "core"
+    else:
+        nat = load_clim_native()
+        if nat is not None:
+            clim = nat[0]
+            kind = "native"
         else:
-            if not os.path.exists(CLIM):
-                if not os.path.exists(PROFILES):
-                    print("   no ERA5 polar-cap profiles yet")
-                    return
-                build_clim()
-            clim = load_climatology(CLIM)
-            kind = "daily"
+            clim_m = load_clim_monthly()
+            if clim_m is not None:
+                clim = clim_m
+                kind = "monthly"
+            else:
+                if not os.path.exists(CLIM):
+                    if not os.path.exists(PROFILES):
+                        print("   no ERA5 polar-cap profiles yet")
+                        return
+                    build_clim()
+                clim = load_climatology(CLIM)
+                kind = "daily"
 
     # 2. the analysis (the recent past, up to the model's init)
     rt, rv, d_recent = load_recent()
@@ -253,8 +294,15 @@ def main(tag="ecmwf-seas5", label="ECMWF SEAS5", short=None):
     # and the chart has to say which it is
     sub_seasonal = bool(mt) and len(mt) <= 90
     kind_word = "sub-seasonal" if sub_seasonal else "seasonal"
+    run_txt = ""
     if run:
         run_txt = "%s run" % run.replace("Z", "Z")
+        # a product that runs every day says so: the ECMWF's sub-seasonal
+        # set is a daily run with a 48-hour delay, and a reader comparing it
+        # with a 35-day GEFS needs to know it
+        freq = _rec.get("frequency")
+        if freq:
+            run_txt += " · %s" % freq
         if members:
             run_txt += " · %s members" % members
     else:
@@ -313,7 +361,7 @@ def main(tag="ecmwf-seas5", label="ECMWF SEAS5", short=None):
     if today is not None and split and today < split:
         today = None
 
-    if kind in ("monthly", "native"):
+    if kind in ("monthly", "native", "core", "cds-daily"):
         cmonths, clevs, cmean, csigma = clim
         keep = [clevs.index(l) for l in levs]
         anom, norm = normalise_monthly(days, values, levs,
@@ -334,13 +382,16 @@ def main(tag="ecmwf-seas5", label="ECMWF SEAS5", short=None):
     lev_txt = "%d-%d" % (min(levs), max(levs))
     title = ("%s · Polar Cap (60-90°N) Normalized Geopotential Height Anomaly"
              % label)
-    clim_txt = {"native": "ERA5 1991-2020 climatology",
+    clim_txt = {"core": "CORe 1991-2020 climatology",
+                "cds-daily": "ERA5 1991-2020 climatology",
+                "native": "ERA5 1991-2020 climatology",
                 "monthly": "ERA5 1991-2020 monthly climatology",
                 "daily": "ERA5 1991-2020 climatology"}[kind]
+    ana_name = (d_recent or {}).get("name") or "ERA5"
     if ana_days:
-        subtitle = ("%d days of ERA5 reanalysis · the %s %s forecast from %s "
+        subtitle = ("%d days of %s reanalysis · the %s %s forecast from %s "
                     "to %s%s · %d levels (%s hPa) · %s"
-                    % (len(ana_days), short, kind_word, init_day, end_day,
+                    % (len(ana_days), ana_name, short, kind_word, init_day, end_day,
                        (" · " + run_txt) if run_txt else "", nlev, lev_txt,
                        clim_txt))
     else:
@@ -353,7 +404,7 @@ def main(tag="ecmwf-seas5", label="ECMWF SEAS5", short=None):
     plot_section(days, norm, levs, p, title, subtitle,
                  split=split if split else None,
                  credit=credit_for(tag),
-                 analysis_label="ERA5 reanalysis" if ana_days else None,
+                 analysis_label=("%s reanalysis" % ana_name) if ana_days else None,
                  forecast_label="%s %s forecast" % (
                      short, "sub-seasonal" if sub_seasonal else "seasonal"),
                  today=today)

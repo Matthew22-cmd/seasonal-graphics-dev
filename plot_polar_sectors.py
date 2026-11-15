@@ -33,6 +33,14 @@ from ecmwf_credit import credit_for  # noqa: E402
 OUT = os.path.join(HERE, "output", "polar_cap")
 MODEL_CACHE = os.path.join(DATA, "polar_model_z.json")
 CLIM_MONTHLY = os.path.join(DATA, "polar_cap_clim_monthly.npz")
+# the climatology built from the CDS DAILY reanalysis: the same product and
+# grid as the reanalysis half, with the real ERA5's spread.  The ARCO native
+# store mutes the stratospheric variability, so a sector measured against it
+# comes out too large; see plot_polar_cap.py.
+CLIM_CDSDAILY = os.path.join(DATA, "polar_cap_clim_cdsdaily.npz")
+# the climate built from NOAA's CORe reanalysis - the same product the
+# reanalysis half is measured with
+CLIM_CORE = os.path.join(DATA, "polar_cap_clim_core.npz")
 # the EC46 keeps its own file
 EC46_CACHE = os.path.join(DATA, "polar_ec46_z.json")
 
@@ -43,23 +51,28 @@ def cache_for(tag):
 
 def load_sector_clim():
     """-> {sector: {month: (mean, sigma)}}, or None."""
-    # the climate built from the same store as the reanalysis half comes
-    # first; the CDS's monthly means are the fallback
+    # the climate built from the CDS DAILY reanalysis comes first: the same
+    # product as the reanalysis half, and the real ERA5's spread.  The ARCO
+    # native store mutes the stratospheric variability; the CDS monthly
+    # means come out about 11,000 m2/s2 colder in the stratosphere.
+    for path in (CLIM_CDSDAILY, CLIM_CORE, CLIM_MONTHLY):
+        if not os.path.exists(path):
+            continue
+        d = np.load(path, allow_pickle=True)
+        if "sector_data" not in d:
+            continue
+        out = {}
+        for entry in d["sector_data"]:
+            for name, months in entry.items():
+                out[name] = {int(m): (np.array(v["mean"], float),
+                                      np.array(v["sigma"], float))
+                             for m, v in months.items()}
+        if out:
+            return out
     nat = load_clim_native()
     if nat is not None and nat[1]:
         return nat[1]
-    if not os.path.exists(CLIM_MONTHLY):
-        return None
-    d = np.load(CLIM_MONTHLY, allow_pickle=True)
-    if "sector_data" not in d:
-        return None
-    out = {}
-    for entry in d["sector_data"]:
-        for name, months in entry.items():
-            out[name] = {int(m): (np.array(v["mean"], float),
-                                  np.array(v["sigma"], float))
-                         for m, v in months.items()}
-    return out
+    return None
 
 
 def main(tag="gefsv12", label="NOAA GEFSv12", short=None):
@@ -92,8 +105,14 @@ def main(tag="gefsv12", label="NOAA GEFSv12", short=None):
             print("   the %s sector has no climate yet" % name)
             continue
         vals = np.array(series, float)[order]
-        keep = [i for i, t in enumerate(times)
-                if t.endswith("12") or len(t) == 10]
+        # one value per calendar day, the earliest of it: the seasonal and
+        # the GEFS products are published at 12Z, but the ECMWF's
+        # sub-seasonal runs are at 00Z, so the hour is not the rule - the
+        # day is
+        seen = {}
+        for i, t in enumerate(times):
+            seen.setdefault(t[:10], i)
+        keep = sorted(seen.values())
         times_s = [times[i] for i in keep]
         vals = vals[keep]
         if len(times_s) < 3:
@@ -126,10 +145,16 @@ def main(tag="gefsv12", label="NOAA GEFSv12", short=None):
     bits = []
     if run:
         bits.append("%s run" % run)
+    freq = rec.get("frequency")
+    if freq:
+        # the ECMWF's sub-seasonal set is a DAILY run with a 48-hour delay
+        bits.append(freq)
     if nmem:
         bits.append("%s members" % nmem)
     bits.append("%d levels (10-1000 hPa)" % len(levels))
-    bits.append("ERA5 1991-2020 sector climatology")
+    _c = ("CORe" if os.path.exists(CLIM_CORE) and not os.path.exists(CLIM_CDSDAILY)
+          else "ERA5")
+    bits.append("%s 1991-2020 sector climatology" % _c)
     subtitle = ("the %s sector forecast from %s to %s · %s"
                 % (short, times[0][:10], times[-1][:10], " · ".join(bits)))
 
