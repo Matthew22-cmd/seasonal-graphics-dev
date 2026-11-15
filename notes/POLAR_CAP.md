@@ -649,3 +649,11 @@ instead of asking for those chunks a second time.
 * the open `ecmwf-forecasts` S3 bucket carries `ifs/`, `aifs-ens/` and
   `aifs-single/` only - no extended range;
 * `ecmwf-open-data`, `s2s-forecasts` and `ecmwf-s2s` are not buckets.
+
+**The stall limit is 60 hours, not 6.**  On 15 Nov 2026 the store processed
+nothing for this account for more than twelve hours: the two jobs sat
+`accepted` from 08:01Z and 09:34Z, and the last successful job finished at
+02:58Z.  A six-hour stall limit would have dismissed a job that had already
+waited nearly eight hours, and a dismissal puts the request at the BACK of
+the queue.  `wait()` now waits 14400 checks (60 hours at 15 s) before it
+gives up on a job that has not started.

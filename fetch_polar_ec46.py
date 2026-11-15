@@ -455,7 +455,7 @@ def submit(s, run_date, run_time, weeks):
     return j.get("jobID") or j.get("processID")
 
 
-def wait(s, jid, tries=1440, stall_limit=1440):
+def wait(s, jid, tries=1440, stall_limit=14400):
     """-> True when the job finishes.
 
     The queue is congested and a job can sit 'accepted' for a long time.
@@ -473,6 +473,12 @@ def wait(s, jid, tries=1440, stall_limit=1440):
     So a job that has not started is waited out rather than dismissed: the
     store's congestion is not the job's fault, and the account's own limit
     is small enough that a job sitting there IS the account's slot.
+
+    15 Nov 2026: the stall limit is 14400 checks (60 hours at 15 s).  The
+    store processed NOTHING for this account for more than twelve hours -
+    two jobs sat 'accepted' from 08:01Z and 09:34Z - and a six-hour limit
+    would have dismissed a job that had already waited nearly eight hours
+    and put the request at the BACK of the queue.
     """
     started = False
     slow = 0
