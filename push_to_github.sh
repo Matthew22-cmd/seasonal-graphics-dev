@@ -39,18 +39,41 @@ else
 fi
 
 echo ">> ensuring repo ${OWNER}/${REPO} exists"
-code=$(curl -s -o /tmp/repo.json -w '%{http_code}' -X POST \
-  -H "Authorization: Bearer ${TOKEN}" \
-  -H "Accept: application/vnd.github+json" \
-  "https://api.github.com/user/repos" \
-  -d "{\"name\":\"${REPO}\",\"private\":false,\"has_pages\":true,\"description\":\"Seasonal snowfall and 10 hPa zonal wind graphics from ECMWF SEAS5 and other seasonal prediction systems\"}")
-if [ "$code" = "201" ]; then
-  echo "   created"
-elif [ "$code" = "422" ]; then
-  echo "   already exists"
+# If the repo is already there, do NOT try to create it.  The create call is
+# made under the TOKEN's own account, so running it against a repo the token
+# cannot write to does not fail - it quietly makes a stray repository under
+# that account instead, and the push then fails on the real repo.
+exists=$(curl -s -o /dev/null -w '%{http_code}' \
+    -H "Authorization: Bearer ${TOKEN}" \
+    -H "Accept: application/vnd.github+json" \
+    "https://api.github.com/repos/${OWNER}/${REPO}")
+if [ "$exists" = "200" ]; then
+    echo "   it is already there"
 else
-  echo "   WARNING: could not confirm repo creation (HTTP $code):"
-  head -c 400 /tmp/repo.json; echo
+    LOGIN=$(curl -s -H "Authorization: Bearer ${TOKEN}" \
+        "https://api.github.com/user" | \
+        python3 -c "import json,sys;print(json.load(sys.stdin).get('login',''))" \
+        2>/dev/null || echo "")
+    if [ "$LOGIN" != "$OWNER" ]; then
+        echo "   the repo ${OWNER}/${REPO} is not there, and this token belongs"
+        echo "   to ${LOGIN:-another account}, so it cannot create it."
+        echo "   Create it by hand, or give that account write access to it"
+        echo "   (Settings -> Collaborators)."
+        exit 1
+    fi
+    code=$(curl -s -o /tmp/repo.json -w '%{http_code}' -X POST \
+        -H "Authorization: Bearer ${TOKEN}" \
+        -H "Accept: application/vnd.github+json" \
+        "https://api.github.com/user/repos" \
+        -d "{\"name\":\"${REPO}\",\"private\":false,\"has_pages\":true,\"description\":\"Seasonal snowfall and 10 hPa zonal wind graphics from ECMWF SEAS5 and other seasonal prediction systems\"}")
+    if [ "$code" = "201" ]; then
+        echo "   created"
+    elif [ "$code" = "422" ]; then
+        echo "   already exists"
+    else
+        echo "   WARNING: could not confirm repo creation (HTTP $code):"
+        head -c 400 /tmp/repo.json; echo
+    fi
 fi
 
 echo ">> pushing"

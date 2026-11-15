@@ -27,7 +27,7 @@ OUT = os.path.join(HERE, "output", "polar_cap")
 MODELS = [
     ("ecmwf-seas5", "ECMWF SEAS5", None),
     ("gefsv12", "NOAA GEFSv12 (35-day extended)", "GEFSv12"),
-    ("ec46", "ECMWF EC46", None),
+    ("ec46", "ECMWF EC46", "EC46"),
 ]
 
 # the charts that used to be here and are not any more

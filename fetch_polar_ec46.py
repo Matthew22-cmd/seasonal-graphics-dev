@@ -223,14 +223,23 @@ def licence_refusal(r):
 
 
 def read_grib(path):
-    """-> ({valid_time: {level: polar cap mean}}, {valid_time: {sector: {...}}}).
+    """-> ({valid_time: {level: polar cap mean}}, {valid_time: {sector: {...}}},
+             {valid_time: the number of members behind it}).
 
     The sector means are the same reduction over one longitude sector, so
     the Atlantic and the Pacific can be drawn separately.
+
+    The file carries every member at the same valid time and level, so the
+    member values are AVERAGED: the section shows the ensemble mean.  (A
+    reader that kept the last message it saw would draw ONE member and call
+    it the ensemble.)  The number of members behind each time is kept, so
+    the chart can say how many it really is - the archive caps the RESPONSE
+    SIZE, so a chunk can come back with fewer members than were asked for.
     """
     import eccodes
-    out = {}
-    sout = {}
+    from collections import defaultdict
+    acc = defaultdict(lambda: defaultdict(list))
+    sacc = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
     with open(path, "rb") as f:
         while True:
             try:
@@ -269,15 +278,22 @@ def read_grib(path):
                     + timedelta(hours=vt // 100, minutes=vt % 100)
                 lev = int(eccodes.codes_get(gid, "level"))
                 key = valid.strftime("%Y-%m-%d %H")
-                out.setdefault(key, {})[lev] = zonal_mean(v, lats)
+                acc[key][lev].append(zonal_mean(v, lats))
                 for name, (a, b) in SECTORS.items():
-                    sout.setdefault(key, {}).setdefault(name, {})[lev] = \
-                        sector_mean(v, lats, lon2d[0, :], a, b)
+                    sacc[key][name][lev].append(
+                        sector_mean(v, lats, lon2d[0, :], a, b))
             except Exception:                         # noqa: BLE001
                 pass
             finally:
                 eccodes.codes_release(gid)
-    return out
+    out = {t: {lev: float(np.mean(vals)) for lev, vals in d.items()}
+           for t, d in acc.items()}
+    sout = {t: {name: {lev: float(np.mean(vals)) for lev, vals in ld.items()}
+                for name, ld in sd.items()}
+            for t, sd in sacc.items()}
+    # the members behind each time: the number of messages that carried it
+    nmem = {t: int(min(len(vals) for vals in d.values())) for t, d in acc.items()}
+    return out, sout, nmem
 
 
 def submit(s, run_date, run_time, weeks):
@@ -383,23 +399,44 @@ def main():
             continue
         path = os.path.join(DATA, "_ec46_%d.grib" % i)
         download(s, jid, path)
-        vals, svals = read_grib(path)
+        vals, svals, nmem = read_grib(path)
         os.remove(path)
         rec = out.setdefault(TAG, {"times": [], "values": [],
                                    "sectors": {}, "levels": list(LEVELS)})
+        # only the times that carry every level of BOTH the cap and the two
+        # sectors are kept, so the times and the sector rows stay in step
+        # (a sector row that was short would put the two out of line and
+        # the chart would draw the wrong sector against the wrong day)
+        keep = []
         for t in sorted(vals):
             row = [vals[t].get(l) for l in LEVELS]
             if any(x is None for x in row):
                 continue
-            rec["times"].append(t)
-            rec["values"].append(row)
-            for name, sd in svals.get(t, {}).items():
+            srows = {}
+            bad = False
+            for name in SECTORS:
+                sd = svals.get(t, {}).get(name, {})
                 srow = [sd.get(l) for l in LEVELS]
                 if any(x is None for x in srow):
-                    continue
+                    bad = True
+                    break
+                srows[name] = srow
+            if bad:
+                continue
+            keep.append((t, row, srows, nmem.get(t, 0)))
+        for t, row, srows, nm in keep:
+            rec["times"].append(t)
+            rec["values"].append(row)
+            for name, srow in srows.items():
                 rec.setdefault("sectors", {}).setdefault(name, []).append(srow)
-        rec["run"] = "%s %s" % (run_date, run_time)
-        rec["members"] = 51
+        rec["run"] = "%s %sZ" % (run_date, run_time[:2])
+        # the members behind the series: the FEWEST that came back for any of
+        # the days, so the number on the chart is the number behind every day
+        if keep:
+            nm_all = [nm for _t, _r, _s, nm in keep]
+            rec["members"] = min(nm_all)
+            print("   the chunk carries %d members over %d days"
+                  % (rec["members"], len(keep)), flush=True)
         with open(OUT + ".tmp", "w") as f:
             json.dump(out, f, indent=1)
         os.replace(OUT + ".tmp", OUT)
@@ -410,7 +447,7 @@ def main():
                 cache = json.load(f)
         cache[TAG] = {"times": rec["times"], "values": rec["values"],
                       "levels": list(LEVELS), "run": rec["run"],
-                      "members": 51}
+                      "members": rec.get("members", 0)}
         if rec.get("sectors"):
             cache[TAG]["sectors"] = rec["sectors"]
         with open(CACHE + ".tmp", "w") as f:
