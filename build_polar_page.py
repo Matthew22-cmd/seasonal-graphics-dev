@@ -121,6 +121,15 @@ def polar_block(reg=None):
   that model&rsquo;s own run. The reanalysis and the forecast are on the same
   scale and the same colour bar, so the two halves can be read against each
   other.</p>
+  <p class="lead">A seasonal model&rsquo;s own mean state is not the observed
+  climate: by the far end of a seven-month run the ECMWF SEAS5 sits several
+  thousand m&sup2;/s&sup2; below it, and the small summer spread then draws
+  that as several sigma of a cold stratosphere when it is nothing of the
+  kind. The forecast half is therefore measured against <strong>the
+  model&rsquo;s own hindcast climate</strong>, which removes that offset; the
+  reanalysis half stays on the CORe climate, and both are in standard
+  deviations of it. The GEFS&rsquo;s 35-day run drifts very little, so it is
+  measured against the CORe climate directly.</p>
   <div class="picker">
     <label for="polarSel">Model</label>
     <select id="polarSel" class="ctrl">%s</select>

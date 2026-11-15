@@ -474,6 +474,42 @@ def _alt_label(km):
     return "%d km" % round(km)
 
 
+def fit_subtitle(parts, limit=1995.0, fs=9.5, fig_w=13.5, x0=0.052):
+    """Join the parts of a subtitle, dropping the optional ones if it is long.
+
+    The section figure is 2025 px wide and the descriptor has to end before
+    the edge, so a long subtitle has to give something up.  The parts are
+    given as (text, optional) and the optional ones are dropped from the
+    right until the text fits.
+
+    -> the subtitle
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    keep = list(parts)
+
+    def end_px(s):
+        fig = plt.figure(figsize=(fig_w, 7.0), dpi=150)
+        t = fig.text(x0, 0.921, s, fontsize=fs, ha="left", va="top")
+        fig.canvas.draw()
+        bb = t.get_window_extent(fig.canvas.get_renderer())
+        plt.close(fig)
+        return x0 * fig_w * 150 + bb.width
+
+    while True:
+        s = " · ".join(p[0] for p in keep if p[0])
+        if end_px(s) <= limit:
+            return s
+        for i in range(len(keep) - 1, -1, -1):
+            if keep[i][1]:
+                del keep[i]
+                break
+        else:
+            return s
+
+
 def plot_section(times, norm, levels, out_path, title, subtitle,
                  split=None, split_label="", credit=None, handle="@Massachusettswx",
                  vmax=5.0, analysis_label=None, forecast_label=None,

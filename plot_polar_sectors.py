@@ -26,8 +26,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(HERE, "data")
 sys.path.insert(0, HERE)
 
+import polar_rebase  # noqa: E402
 from polar_cap import (G0, SECTOR_LABELS, daily_climate,  # noqa: E402
-                       load_clim_native, plot_sector_sections)
+                       fit_subtitle, load_clim_native, plot_sector_sections)
 from ecmwf_credit import credit_for  # noqa: E402
 
 OUT = os.path.join(HERE, "output", "polar_cap")
@@ -111,7 +112,9 @@ def load_recent_sectors():
     return [], {}, "ERA5"
 
 
-def main(tag="gefsv12", label="NOAA GEFSv12", short=None):
+def main(tag="gefsv12", label="NOAA GEFSv12", short=None, rebase="forecast"):
+    # `rebase` says how the forecast half is put on the reanalysis's scale;
+    # see plot_polar_cap.py.
     # `short` is the name the DESCRIPTOR line uses, when the title's name is
     # too long for it (the GEFS's title carries "(35-day extended)")
     short = short or label
@@ -159,6 +162,7 @@ def main(tag="gefsv12", label="NOAA GEFSv12", short=None):
     # the monthly climate, per sector, for each month of the series
     anom = {}
     days = None
+    rebase_txt = ""
     for name in sorted(set(list(fc.keys()) + list(rv.keys()))):
         if name not in clim:
             print("   the %s sector has no climate yet" % name)
@@ -185,6 +189,23 @@ def main(tag="gefsv12", label="NOAA GEFSv12", short=None):
                           for m in mlist])
         msig = np.array([np.asarray(clim[name][m][1], float)[:len(levels)]
                          for m in mlist])
+        # A SEASONAL model's mean state is not the observed climate, and by
+        # the far end of a seven-month run it is thousands of m2/s2 below it
+        # - which the small summer sigma then drew as several sigma of a
+        # cold stratosphere.  The forecast is therefore measured against
+        # the model's OWN hindcast climate, exactly as the cap section
+        # does it, so the two charts stay in step.
+        corr, note = polar_rebase.correction(
+            all_days, levels, {m: np.asarray(clim[name][m][0], float)[:len(levels)]
+                               for m in mlist}, mlist, sector=name, mode=rebase,
+            run=rec.get("run") or "")
+        if corr is not None:
+            vals = vals.copy()
+            if rebase == "both":
+                vals[:] = vals - corr
+            else:
+                vals[len(ana_days):] = vals[len(ana_days):] - corr[len(ana_days):]
+            rebase_txt = " · " + note
         daily, dsig = daily_climate(all_days, mlist, mmean, msig)
         # the anomaly is NORMALISED: the climate's own standard deviation
         # for the day, so the two sectors and every level are on one scale
@@ -203,31 +224,33 @@ def main(tag="gefsv12", label="NOAA GEFSv12", short=None):
     nmem = rec.get("members")
     bits = []
     if run:
-        bits.append("%s run" % run)
+        bits.append(("%s run" % run, True))
     freq = rec.get("frequency")
     if freq:
         # the ECMWF's sub-seasonal set is a DAILY run with a 48-hour delay
-        bits.append(freq)
+        bits.append((str(freq), True))
     if nmem:
-        bits.append("%s members" % nmem)
-    bits.append("%d levels (%d-%d hPa)" % (len(levels), min(levels), max(levels)))
+        bits.append(("%s members" % nmem, False))
+    bits.append(("%d levels (%d-%d hPa)" % (len(levels), min(levels), max(levels)),
+                 True))
     _c = ("CORe" if os.path.exists(CLIM_CORE) and not os.path.exists(CLIM_CDSDAILY)
           else "ERA5")
-    bits.append("%s 1991-2020 sector climatology" % _c)
+    bits.append(("%s 1991-2020 sector climatology" % _c, False))
+    if rebase_txt:
+        bits.append((rebase_txt.strip(" ·"), False))
     # the same opening the cap section has: the analysis first, then the
     # forecast, so the two charts can be read against each other
     # the forecast window, not the whole chart: the analysis days in front
     # are named separately, exactly as the cap section names them
     fc_first = fc[list(fc.keys())[0]][0][0][:10] if fc else days[0][:10]
     fc_last = fc[list(fc.keys())[0]][0][-1][:10] if fc else days[-1][:10]
+    head = []
     if ana_days:
-        subtitle = ("%d days of %s reanalysis · the %s sector forecast from "
-                    "%s to %s · %s"
-                    % (len(ana_days), _ana_name, short, fc_first,
-                       fc_last, " · ".join(bits)))
-    else:
-        subtitle = ("the %s sector forecast from %s to %s · %s"
-                    % (short, fc_first, fc_last, " · ".join(bits)))
+        head.append(("%d days of %s reanalysis" % (len(ana_days), _ana_name),
+                     False))
+    head.append(("the %s sector forecast from %s to %s"
+                 % (short, fc_first, fc_last), False))
+    subtitle = fit_subtitle(head + bits, limit=2600.0, fig_w=17.6)
 
     os.makedirs(OUT, exist_ok=True)
     path = os.path.join(OUT, "polar_sectors_%s.png" % tag)
@@ -242,4 +265,5 @@ if __name__ == "__main__":
     tag = sys.argv[1] if len(sys.argv) > 1 else "gefsv12"
     label = sys.argv[2] if len(sys.argv) > 2 else "NOAA GEFSv12"
     short = sys.argv[3] if len(sys.argv) > 3 else None
-    main(tag, label, short)
+    rebase = sys.argv[4] if len(sys.argv) > 4 else "forecast"
+    main(tag, label, short, rebase)

@@ -433,7 +433,7 @@ function render(){
   });
   vars.push({
     title:'Polar cap geopotential height',
-    desc:'A time-height section of the polar cap (60-90N): the normalized geopotential height anomaly in standard deviations of the CORe reanalysis&rsquo;s own 1991-2020 climate, from 10 hPa down to the surface.',
+    desc:'A time-height section of the polar cap (60-90N): the normalized geopotential height anomaly in standard deviations of the CORe reanalysis&rsquo;s own 1991-2020 climate, from 10 hPa down to the surface. A seasonal model&rsquo;s forecast is measured against its own hindcast climate.',
     href:'spv.html?m='+m.id+'#polar',
     img:(m.polar&&m.polar.file)||'',
     on:!!m.polar_ok

@@ -673,3 +673,94 @@ chunk is finished.  A job that is live in the store but not in the state
 file cannot be adopted after a restart, and the chunk is asked for a
 second time - which takes the account's room away from the job that is
 already queued.
+
+## 15 Nov 2026 - the SEAS5's far end was the MODEL's own mean state, not a forecast
+
+### The complaint, and what it turned out to be
+
+The SEAS5's polar-cap section drew its far end (April to June 2027) as
+-2 to -4 sigma of a **cold stratosphere**, and the user was right that
+nothing had been fixed.  It was not the atmosphere and it was not the
+reanalysis: the **forecast half was measured against the OBSERVED climate**,
+and a seasonal model's mean state is not the observed climate.
+
+Measured, 10 hPa, polar-cap mean, the model's own climate against the CORe
+1991-2020 climate:
+
+| lead month | Nov | Dec | Jan | Feb | Mar | Apr | May | Jun |
+|---|---|---|---|---|---|---|---|---|
+| the model's bias (m2/s2) | -641 | -809 | -311 | -1,627 | -1,654 | -2,908 | ~-5,300 | ~-4,941 |
+
+And the observed climate's own sigma at 10 hPa falls to **429 m2/s2 in
+June** (631 on the day), so an offset of 5,000 was amplified to several
+sigma by the denominator.
+
+**The model's mean state does not drift with the lead** - the same
+calendar month at two different leads differs by only a few hundred m2/s2
+(November at lead 1 of the November init: 289,848.6; November at lead 2 of
+the October init: 289,892.3, a difference of +43.7).  So the far-end offset
+is a seasonal mismatch, not a runaway drift, and subtracting the model's own
+climate removes it.
+
+### The fix: the forecast is measured against the model's OWN hindcast climate
+
+    plotted = observed_climate + (model - model_clim)
+
+The reanalysis half is untouched (it is the observed climate against
+itself), the model's own offset is removed from the forecast, and the two
+halves still meet at the dashed line.
+
+Where the model's own climate comes from:
+
+* **Lead months 1-6 (November to April)** - `seasonal-monthly-pressure-levels`
+  with `product_type: hindcast_climate_mean`, one small request
+  (`fetch_polar_model_clim.py`).  10 hPa cap means: 289,848.6 / 286,904.7 /
+  288,481.9 / 290,971.9 / 293,705.3 / 299,082.5.
+* **Lead months 7-8 (May, June)** - the monthly product caps at lead month
+  6 and the daily one stops at 215 days, so the far end comes from the
+  model's own **past November inits** through the daily product, exactly as
+  the SPV chart's month-7 climate was built (`fetch_polar_model_clim7.py`,
+  ten inits 2016-2025).  The past inits' **lead 6 (April)** is the check on
+  the pull: the same season and the same lead as the monthly product's.
+* **October**, the month before the chart's first day - the observed climate
+  is interpolated onto the days from the monthly means, and the first half
+  of November leans on the October mean, so the model needs an October
+  anchor too or the two halves do not meet (`fetch_polar_model_clim_oct.py`).
+  The October init's lead 1 is used; the model's mean state moves by only a
+  few hundred m2/s2 per lead month, so the lead difference is second order.
+
+### The date trap in the monthly product
+
+The monthly product stamps a month on the FIRST of the month AFTER the one
+it covers: the field dated `2026-12-01` is **November 2026**, which is lead
+month 1 of a November init.  The lead has to be worked out from the
+validity date, not from the number of fields.
+
+### The interpolation is the observed climate's own
+
+The model's monthly means are anchored at the middle of each calendar month
+and interpolated onto the days exactly as `daily_climate` does it for the
+observed climate, so the two stay on one scale and the forecast does not
+step at every month boundary.  The interpolation is LINEAR, so
+`interp(model) - interp(observed) = interp(model - observed)`: the bias can
+be interpolated on its own and it is the same thing.
+
+### The step the re-basing leaves at the dashed line
+
+The reanalysis half keeps the observed climate as its reference and the
+forecast is measured against the model's own, so the two halves differ by
+the model's bias at the init: **+1.0 sigma at 10 hPa** on 15 November 2026
+(the model sat 641 m2/s2 below the observed climate in November, and the
+interpolation of the first days of November leans on the October anchor,
+which is 1,246 below).  It reads as no step at all on the chart - the SSW
+runs straight through the line - and the alternative, measuring both halves
+against the model's climate, was checked and rejected: it would move the
+reanalysis half, which is the published CORe record, off the scale the rest
+of the site quotes.
+
+### The GEFS is NOT re-based
+
+`polar_rebase.climate_matches()` refuses the correction for any chart whose
+run is not the model's own init - the GEFS's 35-day run drifts very little
+(a few hundred m2/s2) and it keeps the observed climate, so the two charts
+are on the same footing where they can be.

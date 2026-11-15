@@ -22,9 +22,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(HERE, "data")
 sys.path.insert(0, HERE)
 
+import polar_rebase  # noqa: E402
 from polar_cap import (CAP_N, CAP_S, G0, LEVELS, build_climatology,  # noqa: E402
-                       daily_climate, load_clim_native, load_climatology,
-                       normalise, plot_section)
+                       daily_climate, fit_subtitle, load_clim_native,
+                       load_climatology, normalise, plot_section)
 from ecmwf_credit import credit_for  # noqa: E402
 
 OUT = os.path.join(HERE, "output", "polar_cap")
@@ -232,7 +233,13 @@ def load_series(path, tag):
     return times, vals, levels
 
 
-def main(tag="ecmwf-seas5", label="ECMWF SEAS5", short=None):
+def main(tag="ecmwf-seas5", label="ECMWF SEAS5", short=None,
+         rebase="forecast"):
+    # `rebase` says how the forecast half is put on the reanalysis's scale:
+    # "forecast" measures the forecast against the model's OWN climate and
+    # leaves the reanalysis on the observed one; "both" measures the two
+    # halves against the model's own climate, so the forecast starts exactly
+    # where the analysis ends.
     # `short` is the name the DESCRIPTOR line uses, when the title's name is
     # too long for it (the GEFS's title carries "(35-day extended)")
     short = short or label
@@ -294,6 +301,7 @@ def main(tag="ecmwf-seas5", label="ECMWF SEAS5", short=None):
     # and the chart has to say which it is
     sub_seasonal = bool(mt) and len(mt) <= 90
     kind_word = "sub-seasonal" if sub_seasonal else "seasonal"
+    freq = _rec.get("frequency")
     run_txt = ""
     if run:
         run_txt = "%s run" % run.replace("Z", "Z")
@@ -361,12 +369,36 @@ def main(tag="ecmwf-seas5", label="ECMWF SEAS5", short=None):
     if today is not None and split and today < split:
         today = None
 
+    rebase_txt = ""
     if kind in ("monthly", "native", "core", "cds-daily"):
         cmonths, clevs, cmean, csigma = clim
         keep = [clevs.index(l) for l in levs]
+        cmean = cmean[:, keep]
+        csigma = csigma[:, keep]
+        # A SEASONAL model's mean state is not the observed climate - the
+        # SEAS5's own climate sits about 5,000 m2/s2 below the observed one
+        # by the far end of its run, and the June sigma of the observed
+        # climate is only 429 m2/s2 there, so that offset was drawn as
+        # -4 sigma of a cold stratosphere when it is the model's own mean
+        # state and nothing to do with the forecast.
+        #
+        # The forecast is therefore measured against the model's OWN
+        # hindcast climate and added back to the observed one.  The
+        # reanalysis half keeps the observed climate as its reference, so
+        # the reader still sees the analysis on the scale the rest of the
+        # site quotes.
+        corr, note = polar_rebase.correction(
+            days, levs, {int(m): cmean[i] for i, m in enumerate(cmonths)},
+            cmonths, mode=rebase, run=run)
+        if corr is not None:
+            values = values.copy()
+            if rebase == "both":
+                values[:] = values - corr
+            else:
+                values[split:] = values[split:] - corr[split:]
+            rebase_txt = " · " + note
         anom, norm = normalise_monthly(days, values, levs,
-                                       (cmonths, levs, cmean[:, keep],
-                                        csigma[:, keep]))
+                                       (cmonths, levs, cmean, csigma))
     else:
         cdays, clevs, cmean, csigma = clim
         keep = [clevs.index(l) for l in levs]
@@ -388,17 +420,28 @@ def main(tag="ecmwf-seas5", label="ECMWF SEAS5", short=None):
                 "monthly": "ERA5 1991-2020 monthly climatology",
                 "daily": "ERA5 1991-2020 climatology"}[kind]
     ana_name = (d_recent or {}).get("name") or "ERA5"
+    # The descriptor is fitted to the figure: the parts that can be given up
+    # are the level count (the y axis labels the levels) and the run time
+    # (the init date is on the chart already).  What cannot be given up is
+    # the climate the anomaly is measured against - and, for a model that is
+    # re-based, the note that says so.
+    parts = []
     if ana_days:
-        subtitle = ("%d days of %s reanalysis · the %s %s forecast from %s "
-                    "to %s%s · %d levels (%s hPa) · %s"
-                    % (len(ana_days), ana_name, short, kind_word, init_day, end_day,
-                       (" · " + run_txt) if run_txt else "", nlev, lev_txt,
-                       clim_txt))
-    else:
-        subtitle = ("the %s %s forecast from %s to %s%s · %d levels (%s hPa) · %s"
-                    % (short, kind_word, init_day, end_day,
-                       (" · " + run_txt) if run_txt else "", nlev, lev_txt,
-                       clim_txt))
+        parts.append(("%d days of %s reanalysis" % (len(ana_days), ana_name),
+                       False))
+    parts.append(("the %s %s forecast from %s to %s"
+                  % (short, kind_word, init_day, end_day), False))
+    if members:
+        parts.append(("%s members" % members, False))
+    if run:
+        parts.append(("%s run" % run.replace("Z", "Z"), True))
+    if freq:
+        parts.append((str(freq), True))
+    parts.append(("%d levels (%s hPa)" % (nlev, lev_txt), True))
+    parts.append((clim_txt, False))
+    if rebase_txt:
+        parts.append((rebase_txt.strip(" ·"), False))
+    subtitle = fit_subtitle(parts)
     os.makedirs(OUT, exist_ok=True)
     p = os.path.join(OUT, "polar_cap_%s.png" % tag)
     plot_section(days, norm, levs, p, title, subtitle,
@@ -416,4 +459,5 @@ if __name__ == "__main__":
     tag = sys.argv[1] if len(sys.argv) > 1 else "ecmwf-seas5"
     label = sys.argv[2] if len(sys.argv) > 2 else "ECMWF SEAS5"
     short = sys.argv[3] if len(sys.argv) > 3 else None
-    main(tag, label, short)
+    rebase = sys.argv[4] if len(sys.argv) > 4 else "forecast"
+    main(tag, label, short, rebase)
