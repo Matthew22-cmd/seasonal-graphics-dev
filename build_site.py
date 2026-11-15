@@ -212,7 +212,13 @@ def set_init_sub(reg):
         return
     words = []
     for ini in inits:
-        words.append("%s %s" % (_MONTH_NAMES.get(ini[5:7], ini[5:7]), ini[:4]))
+        # The GEFS is a daily run, so its init carries a day as well
+        # ("2026-11-14"), and the seasonal systems carry only the month
+        # ("2026-11").  Written out, both are "November 2026", and the
+        # header used to say "November 2026 & November 2026 inits".
+        w = "%s %s" % (_MONTH_NAMES.get(ini[5:7], ini[5:7]), ini[:4])
+        if w not in words:
+            words.append(w)
     if len(words) == 1:
         txt = "%s init" % words[0]
     else:
@@ -427,7 +433,7 @@ function render(){
   });
   vars.push({
     title:'Polar cap geopotential height',
-    desc:'A time-height section of the polar cap (60-90N): the geopotential height anomaly against ERA5&rsquo;s 1991-2020 climate, in metres, from 10 hPa down to the surface.',
+    desc:'A time-height section of the polar cap (60-90N): the normalized geopotential height anomaly in standard deviations of the CORe reanalysis&rsquo;s own 1991-2020 climate, from 10 hPa down to the surface.',
     href:'spv.html?m='+m.id+'#polar',
     img:(m.polar&&m.polar.file)||'',
     on:!!m.polar_ok
