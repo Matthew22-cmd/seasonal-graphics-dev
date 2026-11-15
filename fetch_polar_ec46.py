@@ -617,9 +617,14 @@ def main():
     results = []
     for k in range(0, len(pending), PARALLEL):
         batch = pending[k:k + PARALLEL]
-        # the store turns a request away when the account already has too many
-        # jobs waiting, so the room is made first
-        wait_for_queue(s, len(batch))
+        # The store turns a request away when the account already has too
+        # many jobs waiting, so the room is made first.  The jobs that were
+        # ADOPTED are ours and are already counted by the store, so the
+        # room wanted is only what is left over - otherwise the fetcher
+        # waits for room to wait for the job it already has, and never
+        # gets to it.
+        nnew = sum(1 for i, _ in batch if i not in adopted)
+        wait_for_queue(s, nnew)
         with ThreadPoolExecutor(max_workers=len(batch)) as ex:
             for res in ex.map(lambda a: run_chunk(*a), batch):
                 results.append(res)
