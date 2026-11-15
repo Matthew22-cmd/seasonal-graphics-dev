@@ -871,6 +871,17 @@ The archive no longer serves the BoM's October inits - the identical
 request that succeeded on 15 November morning now fails with
 `MarsNoDataError` - but the CDS still holds every job result.
 `redecode_lagged.py` downloads each result, decodes it, merges it with the
-fixed merge and deletes the GRIB again.  The UKMO after the rebuild:
+fixed merge and deletes the GRIB again.  The three series after the
+rebuild:
 
-    62 members x 185 days (2026-11-01 .. 2027-05-04), 62 members on every day
+| centre | members | days | the members on every day | the values recovered |
+|---|---|---|---|---|
+| UKMO | 62 | 185 (01 Nov - 04 May) | 62 | 870 |
+| JMA | 155 | 185 (01 Nov - 04 May) | 155 | 4,350 |
+| BoM | 99 | 207 (02 Nov - 27 May) | 99 | - |
+
+Every value that the old series already held is **identical** in the new
+one (0 different out of 11,470 and 28,675 compared), and no member's own
+series has a gap in it any more.  The charts are redrawn from the repaired
+series and the ensemble mean is now taken over the same members on every
+day of the chart.
