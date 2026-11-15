@@ -626,6 +626,13 @@ the only place the full 60-90N circle appears.
 | `natl` | 300E-60E | 120 deg |
 | `npac` | 120E-240E | 120 deg |
 
+The two sectors are **named by their latitude range** - "North Pacific
+(60N-90N)" and "North Atlantic (60N-90N)" - on the panels and in the
+legend.  The longitudes are a property of the wedge, not of the sector's
+meaning, and the long label ran the panel titles into the map's heading.
+The wedges on the map keep the short names ("North Pacific", "North
+Atlantic") because a long label there spills out over the cap's edge.
+
 The two sectors cover 240 of the cap's 360 degrees, so the width-weighted
 mean of the two is **not** the cap mean - the sector panels are the
 sector's own mean, measured against the CORe climatology for that same
