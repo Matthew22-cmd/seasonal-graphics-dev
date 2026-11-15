@@ -76,7 +76,7 @@ def items(reg=None):
 
 
 def sector_items(reg=None):
-    """The same section split into the North Pacific and the North Atlantic."""
+    """The same section split into four longitude sectors."""
     out = []
     for mid, name in available(reg):
         info = None
@@ -127,7 +127,7 @@ def polar_block(reg=None):
     <label for="polarView">View</label>
     <select id="polarView" class="ctrl">
       <option value="cap">Whole polar cap</option>
-      <option value="sectors">North Pacific &amp; North Atlantic</option>
+      <option value="sectors">By sector</option>
     </select>
   </div>
 </div>
@@ -151,8 +151,8 @@ function syncView(){
   const has=!!POLARSECTORS[psel.value];
   const opt=pview.querySelector('option[value="sectors"]');
   opt.disabled=!has;
-  opt.textContent=has?'North Pacific & North Atlantic'
-                     :'North Pacific & North Atlantic (not for this model)';
+  opt.textContent=has?'By sector (four sectors)'
+                     :'By sector (not for this model)';
   if(!has && pview.value==='sectors') pview.value='cap';
 }
 function renderPolar(){

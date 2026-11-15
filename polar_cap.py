@@ -939,8 +939,17 @@ def plot_sector_sections(times, sectors, levels, out_path, title, subtitle,
             else:
                 del idx[j + 1]
         ax.set_xticks(idx)
-        ax.set_xticklabels([_short_date(times[k]) for k in idx], fontsize=8.5,
-                           color=C_TEXT)
+        labs = [_short_date(times[k]) for k in idx]
+        # A tick label centred on its tick hangs half outside the panel, so
+        # the last date of one panel ran into the first date of the next.
+        # The panels share one time axis, so the outer panels carry the
+        # start and the end date and the inner ones leave them out.  The
+        # TICKS stay on every panel, so the gridlines still line up.
+        if i > 0:
+            labs[0] = ""
+        if i < npan - 1:
+            labs[-1] = ""
+        ax.set_xticklabels(labs, fontsize=8.5, color=C_TEXT)
         ax.set_xlim(-0.5, n - 0.5)
 
         ax.grid(True, color=C_GRID, linestyle=(0, (1, 3)), lw=0.6, alpha=0.8)
