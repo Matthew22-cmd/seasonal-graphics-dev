@@ -115,21 +115,21 @@ def sector_mean(field, lat, lon, lon0, lon1):
 # with it, so the by-sector charts did not account for a third of the cap
 # and a reader comparing a sector with the whole-cap chart had no way to
 # know where the rest of the cap was.
+# The two sectors the section is drawn for: the North Pacific and the
+# North Atlantic, 60-90N.  The Arctic and the Barents-Kara are NOT on the
+# site - they were never asked for - so the wedge between 60E and 120E is
+# simply not in the by-sector charts, and the whole-cap chart is the only
+# place the full 60-90N circle appears.
 SECTORS = {
     "natl": (300.0, 60.0),
     "npac": (120.0, 240.0),
-    "narctic": (240.0, 300.0),
-    "nbarents": (60.0, 120.0),
 }
 SECTOR_LABELS = {
     "natl": "North Atlantic",
     "npac": "North Pacific",
-    "narctic": "Arctic (Siberian)",
-    "nbarents": "Barents-Kara",
 }
-# the order the panels are drawn in: the Pacific at the top of the map, the
-# Arctic sectors across the middle, the Atlantic at the bottom
-SECTOR_ORDER = ("npac", "narctic", "nbarents", "natl")
+# the order the panels are drawn in: the Pacific first, the Atlantic second
+SECTOR_ORDER = ("npac", "natl")
 
 
 def read_grib_levels(path, levels=None):
@@ -725,8 +725,7 @@ def plot_domain_map(ax):
         ax.add_collection(pc)
 
     # the sectors, over the map, so the geography shows through them
-    for name, colour in (("npac", "#f4b740"), ("narctic", "#7fbf7f"),
-                         ("nbarents", "#b48cd9"), ("natl", "#3d7fd1")):
+    for name, colour in (("npac", "#f4b740"), ("natl", "#3d7fd1")):
         lon0, lon1 = SECTORS[name]
         ax.add_patch(_wedge(lon0, lon1, cap_r, colour, alpha=0.62))
 
@@ -752,14 +751,12 @@ def plot_domain_map(ax):
     # the sectors, named on the map
     import matplotlib.patheffects as pe
     halo = [pe.withStroke(linewidth=2.2, foreground="white")]
-    for name, colour in (("npac", "#7a5200"), ("narctic", "#245c24"),
-                          ("nbarents", "#5b2a86"), ("natl", "#123f77")):
+    for name, colour in (("npac", "#7a5200"), ("natl", "#123f77")):
         lon0, lon1 = SECTORS[name]
         mid = (lon0 + (lon1 - lon0 if lon1 > lon0 else lon1 + 360 - lon0) / 2.0)
         # the name on the map is the SHORT one: the full label is long
         # enough to spill out of the cap and over the map's edge.
-        short = {"npac": "North Pacific", "narctic": "Arctic",
-                 "nbarents": "Barents", "natl": "North Atlantic"}.get(name, name)
+        short = {"npac": "North Pacific", "natl": "North Atlantic"}.get(name, name)
         x, y = pt(mid % 360.0, 74.0)
         ax.text(x, y, short, fontsize=8.0,
                 fontweight="bold", color=colour, ha="center", va="center",
@@ -784,10 +781,6 @@ def plot_domain_map(ax):
     handles = [
         mpatches.Patch(facecolor="#f4b740", edgecolor="none", alpha=0.62,
                        label="North Pacific (120°E-240°E)"),
-        mpatches.Patch(facecolor="#7fbf7f", edgecolor="none", alpha=0.62,
-                       label="Arctic (240°E-300°E)"),
-        mpatches.Patch(facecolor="#b48cd9", edgecolor="none", alpha=0.62,
-                       label="Barents-Kara (60°E-120°E)"),
         mpatches.Patch(facecolor="#3d7fd1", edgecolor="none", alpha=0.62,
                        label="North Atlantic (300°E-60°E)"),
         mpatches.Patch(facecolor="#d9d3c6", edgecolor="#b3aa9a",
@@ -869,7 +862,7 @@ def _wedge(lon0, lon1, rmax, colour, alpha=1.0):
 
 def plot_sector_sections(times, sectors, levels, out_path, title, subtitle,
                          split=None, credit=None, handle="@Massachusettswx",
-                         order=("npac", "narctic", "nbarents", "natl"),
+                         order=SECTOR_ORDER,
                          forecast_alpha=0.62):
     """Draw the polar cap split into two sectors, side by side.
 

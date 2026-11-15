@@ -76,7 +76,7 @@ def items(reg=None):
 
 
 def sector_items(reg=None):
-    """The same section split into four longitude sectors."""
+    """The same section split into the two longitude sectors."""
     out = []
     for mid, name in available(reg):
         info = None
@@ -160,7 +160,7 @@ function syncView(){
   const has=!!POLARSECTORS[psel.value];
   const opt=pview.querySelector('option[value="sectors"]');
   opt.disabled=!has;
-  opt.textContent=has?'By sector (four sectors)'
+  opt.textContent=has?'By sector (Pacific and Atlantic)'
                      :'By sector (not for this model)';
   if(!has && pview.value==='sectors') pview.value='cap';
 }

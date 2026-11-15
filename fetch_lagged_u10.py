@@ -359,7 +359,15 @@ def build_matrix(recs, members):
 
 
 def merge(dst, new):
-    """Merge a decoded chunk into the centre's accumulator."""
+    """Merge a decoded chunk into the centre's accumulator.
+
+    A chunk covers a lead WINDOW, so its matrix holds a cell for every date
+    in the chunk but only the members whose own run reaches that date carry
+    a value there.  Writing the whole row would put the chunk's empty cells
+    (NaN) over the accumulator's good values at every chunk boundary, and
+    that is what punched the holes into the stored series.  So only the
+    cells that hold a value are written.
+    """
     dates, m60, mnh, members = dst
     d2, a2, b2, mem2 = new
     allm = sorted(set(members) | set(mem2))
@@ -368,14 +376,15 @@ def merge(dst, new):
     di = {d: i for i, d in enumerate(alld)}
     A = np.full((len(allm), len(alld)), np.nan)
     B = np.full((len(allm), len(alld)), np.nan)
-    if dates:
-        for i, m in enumerate(members):
-            A[mi[m], [di[d] for d in dates]] = m60[i]
-            B[mi[m], [di[d] for d in dates]] = mnh[i]
-    if d2:
-        for i, m in enumerate(mem2):
-            A[mi[m], [di[d] for d in d2]] = a2[i]
-            B[mi[m], [di[d] for d in d2]] = b2[i]
+    for (src_d, src_a, src_b, src_m) in (dst, new):
+        if not src_d:
+            continue
+        cols = np.array([di[d] for d in src_d])
+        for i, m in enumerate(src_m):
+            for (S, V) in ((A, src_a), (B, src_b)):
+                vals = V[i]
+                ok = np.isfinite(vals)
+                S[mi[m], cols[ok]] = vals[ok]
     return alld, A, B, allm
 
 

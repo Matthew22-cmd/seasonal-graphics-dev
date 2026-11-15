@@ -526,7 +526,7 @@ def main():
                 if os.path.exists(os.path.join(POLARDIR, sfn)):
                     entry["polar_sectors"] = {
                         "file": "assets/polar/" + sfn,
-                        "caption": "By sector (60-90N) "
+                        "caption": "North Pacific and North Atlantic (60-90N) "
                                    "geopotential height anomaly - %s."
                                    % entry["name"],
                     }
@@ -549,7 +549,7 @@ def main():
             shutil.copyfile(ssrc, os.path.join(POLARDIR, sfn))
             entry["polar_sectors"] = {
                 "file": "assets/polar/" + sfn,
-                "caption": "By sector (60-90N) "
+                "caption": "North Pacific and North Atlantic (60-90N) "
                            "geopotential height anomaly - %s." % entry["name"],
             }
 
