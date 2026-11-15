@@ -50,10 +50,13 @@ CLIM_NATIVE = os.path.join(DATA, "polar_cap_clim_native.npz")
 # daily one whenever it is there; see fetch_polar_clim_monthly.py.
 CLIM_MONTHLY = os.path.join(DATA, "polar_cap_clim_monthly.npz")
 
-# how many days of ERA5 analysis to show before the forecast starts.
-# Thirty days matches the reference's own analysis window, and it is
-# covered by the October and November ERA5 requests on their own.
-ANA_DAYS = 90
+# How many days of ERA5 analysis to show before the forecast starts.
+#
+# 15 Nov 2026: the user asked for the LAST 15 DAYS of ERA5 before the
+# forecast and no more.  The 90-day window that was here before made the
+# reanalysis half of the section look like a cold bias that ran on for
+# months, and it buried the forecast - the chart is about the forecast.
+ANA_DAYS = 15
 
 
 def load_clim_monthly():
@@ -335,8 +338,8 @@ def main(tag="ecmwf-seas5", label="ECMWF SEAS5", short=None):
                 "monthly": "ERA5 1991-2020 monthly climatology",
                 "daily": "ERA5 1991-2020 climatology"}[kind]
     if ana_days:
-        subtitle = ("%d days of ERA5 reanalysis to the run's init · the %s "
-                    "%s forecast from %s to %s%s · %d levels (%s hPa) · %s"
+        subtitle = ("%d days of ERA5 reanalysis · the %s %s forecast from %s "
+                    "to %s%s · %d levels (%s hPa) · %s"
                     % (len(ana_days), short, kind_word, init_day, end_day,
                        (" · " + run_txt) if run_txt else "", nlev, lev_txt,
                        clim_txt))

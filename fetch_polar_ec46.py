@@ -90,10 +90,18 @@ AREA = [90.0, -180.0, 60.0, 180.0]
 # one.
 SYSTEM = 46
 
-# The lead time ranges, 24_48 up to 816_840: thirty-five days, which is
-# the window the section is drawn over.  The extended range runs to day 46
-# (1104 h), so day 35 is well inside it.
-WEEKLY = ["%d_%d" % (h, h + 24) for h in range(24, 841, 24)]
+# The lead time ranges, 24_48 up to 1080_1104: FORTY-SIX days, which is the
+# whole of the extended range - the chart runs to the end of the run, not to
+# some shorter window of it.  (The window 1080_1104 is the LAST one: the
+# window 1104_1128 would be day 47, which the run does not have.)
+WEEKLY = ["%d_%d" % (h, h + 24) for h in range(24, 1081, 24)]
+
+# The extended range runs on MONDAYS and THURSDAYS at 00Z, and only those runs
+# carry the 46 days: on the other days the archive serves the 15-day
+# ensemble, which stops at lead 360 h.  The catalogue has no `system`
+# parameter - the product is picked by the RUN DATE - so the run is found by
+# asking for a lead window that only an extended-range run has.
+EXTENDED_ONLY = ["1080_1104"]
 
 # The S2S archive holds the run with about a two-day delay, so the run that
 # can be had is the one from roughly 48 hours ago.
@@ -181,35 +189,58 @@ def session():
     return s
 
 
-def latest_run(s, tries=6):
-    """The most recent day the archive holds an ECMWF S2S run for.
+def latest_run(s, tries=8):
+    """The most recent ECMWF sub-seasonal run the archive holds.
 
-    The run date is found by asking the archive backwards from today: the
-    catalogue's `day` enum stops at the 20th, and the archive holds a few
-    days of runs, so the search starts at the 19th and walks back.
+    The S2S archive holds the run with about a TWO-DAY delay, so the run
+    that can be had is the one from roughly 48 hours ago - and it comes
+    DAILY, not only on Mondays and Thursdays.
+
+    The catalogue has no `system` parameter: the product is picked by the
+    RUN DATE.  The probe asks for a lead window at the far end of the
+    extended range (1080_1104 = day 46) together with the first one, so a
+    run that carries the whole 46 days is recognised as such; a run that
+    refuses it is still used, with a word about it, because the run itself
+    is the one that is there.
+
+    The probe is a job of its own, and it is dismissed at once so it does
+    not sit in the queue.
     """
     today = date.today() - timedelta(hours=DELAY_HOURS)
     for back in range(0, tries + 1):
         d = today - timedelta(days=back)
         for t in ("00:00", "12:00"):
-            req = {"origin": "ecmwf",
-                   "year": "%04d" % d.year, "month": "%02d" % d.month,
-                   "day": "%02d" % d.day, "time": t,
-                   "level_type": "pressure",
-                   "variable": ["geopotential_height"],
-                   "level_value": ["%d_hpa" % l for l in LEVELS],
-                   "forecast_type": ["control_forecast"],
-                   "leadtime_hour": ["24_48"], "area": AREA,
-                   "data_format": "grib"}
-            r = s.post(EXEC, json={"inputs": req}, timeout=180)
-            # the Data Store answers 201 Created for a new job, not 200
-            if r.status_code in (200, 201):
-                return d, t, r.json()
-            if r.status_code == 403:
-                raise SystemExit(licence_refusal(r))
-            if r.status_code == 400:
-                # no run that day
-                break
+            for windows, extended in ((list(EXTENDED_ONLY) + ["24_48"], True),
+                                      (["24_48"], False)):
+                req = {"origin": "ecmwf",
+                       "year": "%04d" % d.year, "month": "%02d" % d.month,
+                       "day": "%02d" % d.day, "time": t,
+                       "level_type": "pressure",
+                       "variable": ["geopotential_height"],
+                       "level_value": ["%d_hpa" % l for l in LEVELS],
+                       "forecast_type": ["control_forecast"],
+                       "leadtime_hour": list(windows), "area": AREA,
+                       "data_format": "grib"}
+                r = s.post(EXEC, json={"inputs": req}, timeout=180)
+                # the Data Store answers 201 Created for a new job, not 200
+                if r.status_code in (200, 201):
+                    try:
+                        j = r.json()
+                        jid = j.get("jobID") or j.get("processID")
+                        if jid:
+                            s.delete("%s/retrieve/v1/jobs/%s" % (ECDS, jid),
+                                     timeout=30)
+                    except Exception:                # noqa: BLE001
+                        pass
+                    if not extended:
+                        print("   the run %s %s does not serve the far end of "
+                              "the extended range" % (d, t), flush=True)
+                    print("   the EC46 run: %s %s" % (d, t), flush=True)
+                    return d, t, None
+                if r.status_code == 403:
+                    raise SystemExit(licence_refusal(r))
+                if r.status_code == 400:
+                    break            # this run cannot serve those windows
     return None, None, None
 
 
@@ -224,7 +255,7 @@ def licence_refusal(r):
 
 def read_grib(path):
     """-> ({valid_time: {level: polar cap mean}}, {valid_time: {sector: {...}}},
-             {valid_time: the number of members behind it}).
+             {valid_time: the members behind it}).
 
     The sector means are the same reduction over one longitude sector, so
     the Atlantic and the Pacific can be drawn separately.
@@ -232,14 +263,19 @@ def read_grib(path):
     The file carries every member at the same valid time and level, so the
     member values are AVERAGED: the section shows the ensemble mean.  (A
     reader that kept the last message it saw would draw ONE member and call
-    it the ensemble.)  The number of members behind each time is kept, so
-    the chart can say how many it really is - the archive caps the RESPONSE
-    SIZE, so a chunk can come back with fewer members than were asked for.
+    it the ensemble.)
+
+    The member set is the one that is present at EVERY time of the run, not
+    the one that happens to be in each chunk: the archive caps the RESPONSE
+    SIZE, so a chunk can come back with fewer members than were asked for,
+    and a mean whose membership changes half way through the chart would
+    draw a step that is an artefact of the archive and not of the atmosphere.
     """
     import eccodes
     from collections import defaultdict
-    acc = defaultdict(lambda: defaultdict(list))
-    sacc = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
+    # acc[time][level][member] = the polar cap mean
+    acc = defaultdict(lambda: defaultdict(dict))
+    sacc = defaultdict(lambda: defaultdict(lambda: defaultdict(dict)))
     with open(path, "rb") as f:
         while True:
             try:
@@ -278,21 +314,51 @@ def read_grib(path):
                     + timedelta(hours=vt // 100, minutes=vt % 100)
                 lev = int(eccodes.codes_get(gid, "level"))
                 key = valid.strftime("%Y-%m-%d %H")
-                acc[key][lev].append(zonal_mean(v, lats))
+                # the member number: the control is 0 and the perturbations
+                # are 1, 2, 3 ...
+                try:
+                    mem = int(eccodes.codes_get(gid, "number") or 0)
+                except Exception:                     # noqa: BLE001
+                    mem = 0
+                cap = zonal_mean(v, lats)
+                acc[key][lev][mem] = cap
                 for name, (a, b) in SECTORS.items():
-                    sacc[key][name][lev].append(
-                        sector_mean(v, lats, lon2d[0, :], a, b))
+                    sacc[key][name][lev][mem] = \
+                        sector_mean(v, lats, lon2d[0, :], a, b)
             except Exception:                         # noqa: BLE001
                 pass
             finally:
                 eccodes.codes_release(gid)
-    out = {t: {lev: float(np.mean(vals)) for lev, vals in d.items()}
-           for t, d in acc.items()}
-    sout = {t: {name: {lev: float(np.mean(vals)) for lev, vals in ld.items()}
-                for name, ld in sd.items()}
-            for t, sd in sacc.items()}
-    # the members behind each time: the number of messages that carried it
-    nmem = {t: int(min(len(vals) for vals in d.values())) for t, d in acc.items()}
+
+    # the members that are present at EVERY time of the file
+    common = None
+    for t, d in acc.items():
+        for lev, mm in d.items():
+            s = set(mm)
+            common = s if common is None else (common & s)
+    common = common or set()
+
+    out = {}
+    sout = {}
+    for t, d in acc.items():
+        row = {}
+        for lev, mm in d.items():
+            vals = [mm[m] for m in common if m in mm]
+            if vals:
+                row[lev] = float(np.mean(vals))
+        out[t] = row
+    for t, sd in sacc.items():
+        row = {}
+        for name, ld in sd.items():
+            srow = {}
+            for lev, mm in ld.items():
+                vals = [mm[m] for m in common if m in mm]
+                if vals:
+                    srow[lev] = float(np.mean(vals))
+            row[name] = srow
+        sout[t] = row
+    # the members behind each time
+    nmem = {t: len(common) for t in acc}
     return out, sout, nmem
 
 
@@ -380,8 +446,16 @@ def main():
     st = json.load(open(STATE)) if os.path.exists(STATE) else {"jobs": []}
     out = json.load(open(OUT)) if os.path.exists(OUT) else {}
 
-    # the weekly windows in chunks: the archive caps the RESPONSE SIZE
+    # The weekly windows in chunks: the archive caps the RESPONSE SIZE, and
+    # a chunk that carries fewer members than the model has is a broken
+    # answer.  The chunk size can be set on the command line: one big request
+    # for the whole range costs ONE turn of the queue and gives every day the
+    # SAME member set, which is what a section wants (a mean whose membership
+    # changes half way through is an artefact of the archive, not of the
+    # atmosphere).
     CHUNK = 5
+    if "--chunk-size" in sys.argv:
+        CHUNK = int(sys.argv[sys.argv.index("--chunk-size") + 1])
     for i in range(0, len(WEEKLY), CHUNK):
         weeks = WEEKLY[i:i + CHUNK]
         done = [j for j in st["jobs"]
