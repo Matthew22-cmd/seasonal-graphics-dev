@@ -62,7 +62,10 @@ def load_sector_clim():
     return out
 
 
-def main(tag="gefsv12", label="NOAA GEFSv12"):
+def main(tag="gefsv12", label="NOAA GEFSv12", short=None):
+    # `short` is the name the DESCRIPTOR line uses, when the title's name is
+    # too long for it (the GEFS's title carries "(35-day extended)")
+    short = short or label
     p = cache_for(tag)
     if not os.path.exists(p):
         print("   no polar series for %s yet" % tag)
@@ -128,7 +131,7 @@ def main(tag="gefsv12", label="NOAA GEFSv12"):
     bits.append("%d levels (10-1000 hPa)" % len(levels))
     bits.append("ERA5 1991-2020 sector climatology")
     subtitle = ("the %s sector forecast from %s to %s · %s"
-                % (label, times[0][:10], times[-1][:10], " · ".join(bits)))
+                % (short, times[0][:10], times[-1][:10], " · ".join(bits)))
 
     os.makedirs(OUT, exist_ok=True)
     path = os.path.join(OUT, "polar_sectors_%s.png" % tag)
@@ -141,4 +144,5 @@ def main(tag="gefsv12", label="NOAA GEFSv12"):
 if __name__ == "__main__":
     tag = sys.argv[1] if len(sys.argv) > 1 else "gefsv12"
     label = sys.argv[2] if len(sys.argv) > 2 else "NOAA GEFSv12"
-    main(tag, label)
+    short = sys.argv[3] if len(sys.argv) > 3 else None
+    main(tag, label, short)

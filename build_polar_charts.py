@@ -25,9 +25,9 @@ OUT = os.path.join(HERE, "output", "polar_cap")
 # added, and for the METFR system 9 section to come out - so the list is
 # the whole of it, and nothing is drawn that is not on it.
 MODELS = [
-    ("ecmwf-seas5", "ECMWF SEAS5"),
-    ("gefsv12", "NOAA GEFSv12 (35-day extended)"),
-    ("ec46", "ECMWF EC46"),
+    ("ecmwf-seas5", "ECMWF SEAS5", None),
+    ("gefsv12", "NOAA GEFSv12 (35-day extended)", "GEFSv12"),
+    ("ec46", "ECMWF EC46", None),
 ]
 
 # the charts that used to be here and are not any more
@@ -69,7 +69,7 @@ def remove_retired():
 def main():
     remove_retired()
     have, any_file = tags()
-    for tag, label in MODELS:
+    for tag, label, short in MODELS:
         if tag not in have:
             # No series on this machine.  The chart that is already published
             # is left alone: the series files are working data that is not
@@ -78,8 +78,10 @@ def main():
             # name above, so nothing is published that was taken out.
             print("   no series for %s yet" % tag)
             continue
-        r = subprocess.run([sys.executable, "-u", "plot_polar_cap.py", tag, label],
-                           cwd=HERE, capture_output=True, text=True)
+        args = [sys.executable, "-u", "plot_polar_cap.py", tag, label]
+        if short:
+            args.append(short)
+        r = subprocess.run(args, cwd=HERE, capture_output=True, text=True)
         out = (r.stdout or "").strip().splitlines()
         for line in out[-3:]:
             print("   %s" % line)
@@ -88,9 +90,10 @@ def main():
                   % (tag, (r.stderr or "").strip().splitlines()[-1][:160]))
         # the same section split into the North Pacific and the North
         # Atlantic, when the sector means are on disk
-        r2 = subprocess.run([sys.executable, "-u", "plot_polar_sectors.py",
-                             tag, label], cwd=HERE, capture_output=True,
-                            text=True)
+        args2 = [sys.executable, "-u", "plot_polar_sectors.py", tag, label]
+        if short:
+            args2.append(short)
+        r2 = subprocess.run(args2, cwd=HERE, capture_output=True, text=True)
         out2 = (r2.stdout or "").strip().splitlines()
         for line in out2[-2:]:
             print("   %s" % line)

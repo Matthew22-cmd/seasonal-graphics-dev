@@ -194,7 +194,10 @@ def load_series(path, tag):
     return times, vals, levels
 
 
-def main(tag="ecmwf-seas5", label="ECMWF SEAS5"):
+def main(tag="ecmwf-seas5", label="ECMWF SEAS5", short=None):
+    # `short` is the name the DESCRIPTOR line uses, when the title's name is
+    # too long for it (the GEFS's title carries "(35-day extended)")
+    short = short or label
     # 1. the climatology.  The monthly one, in the native ERA5 convention,
     # is the one that matches the data; the daily one built from ARCO's
     # reduced store is kept only as a fallback.
@@ -334,12 +337,12 @@ def main(tag="ecmwf-seas5", label="ECMWF SEAS5"):
     if ana_days:
         subtitle = ("%d days of ERA5 reanalysis to the run's init · the %s "
                     "%s forecast from %s to %s%s · %d levels (%s hPa) · %s"
-                    % (len(ana_days), label, kind_word, init_day, end_day,
+                    % (len(ana_days), short, kind_word, init_day, end_day,
                        (" · " + run_txt) if run_txt else "", nlev, lev_txt,
                        clim_txt))
     else:
         subtitle = ("the %s %s forecast from %s to %s%s · %d levels (%s hPa) · %s"
-                    % (label, kind_word, init_day, end_day,
+                    % (short, kind_word, init_day, end_day,
                        (" · " + run_txt) if run_txt else "", nlev, lev_txt,
                        clim_txt))
     os.makedirs(OUT, exist_ok=True)
@@ -349,7 +352,7 @@ def main(tag="ecmwf-seas5", label="ECMWF SEAS5"):
                  credit=credit_for(tag),
                  analysis_label="ERA5 reanalysis" if ana_days else None,
                  forecast_label="%s %s forecast" % (
-                     label, "sub-seasonal" if sub_seasonal else "seasonal"),
+                     short, "sub-seasonal" if sub_seasonal else "seasonal"),
                  today=today)
     print("   the figure: %s" % p)
     return p
@@ -358,4 +361,5 @@ def main(tag="ecmwf-seas5", label="ECMWF SEAS5"):
 if __name__ == "__main__":
     tag = sys.argv[1] if len(sys.argv) > 1 else "ecmwf-seas5"
     label = sys.argv[2] if len(sys.argv) > 2 else "ECMWF SEAS5"
-    main(tag, label)
+    short = sys.argv[3] if len(sys.argv) > 3 else None
+    main(tag, label, short)

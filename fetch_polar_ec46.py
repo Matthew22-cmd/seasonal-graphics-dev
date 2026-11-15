@@ -270,18 +270,36 @@ def read_grib(path):
 
 
 def submit(s, run_date, run_time, weeks):
-    req = {"origin": "ecmwf",
-           "year": "%04d" % run_date.year, "month": "%02d" % run_date.month,
-           "day": "%02d" % run_date.day, "time": run_time,
-           "level_type": "pressure",
-           "variable": ["geopotential_height"],
-           "level_value": ["%d_hpa" % l for l in LEVELS],
-           "forecast_type": ["control_forecast", "perturbed_forecast"],
-           "leadtime_hour": weeks,
-           "area": AREA, "data_format": "grib"}
-    r = s.post(EXEC, json={"inputs": req,
-                           "outputs": {"asset": {"value": {"type": "file"}}}},
-               timeout=300)
+    """-> the job id of the request for these weekly windows.
+
+    The catalogue's form schema names the 46-day system explicitly, so the
+    request carries `system: 46`; if this build of the schema does not know
+    the field the same request goes out without it.
+    """
+    base = {"origin": "ecmwf",
+            "year": "%04d" % run_date.year, "month": "%02d" % run_date.month,
+            "day": "%02d" % run_date.day, "time": run_time,
+            "level_type": "pressure",
+            "variable": ["geopotential_height"],
+            "level_value": ["%d_hpa" % l for l in LEVELS],
+            "forecast_type": ["control_forecast", "perturbed_forecast"],
+            "leadtime_hour": weeks,
+            "area": AREA, "data_format": "grib"}
+
+    def post(req):
+        return s.post(EXEC, json={"inputs": req,
+                                  "outputs": {"asset": {"value": {"type": "file"}}}},
+                      timeout=300)
+
+    req = dict(base)
+    req["system"] = SYSTEM
+    r = post(req)
+    if r.status_code == 403:
+        raise SystemExit(licence_refusal(r))
+    if r.status_code == 400:
+        # the schema does not know the `system` field: the same request goes
+        # out without it
+        r = post(base)
     if r.status_code == 403:
         raise SystemExit(licence_refusal(r))
     if r.status_code >= 400:

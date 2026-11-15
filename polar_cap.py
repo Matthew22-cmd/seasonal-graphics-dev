@@ -746,7 +746,7 @@ def plot_domain_map(ax):
                        label="land"),
     ]
     leg = ax.legend(handles=handles, loc="lower center",
-                    bbox_to_anchor=(0.5, -0.13), fontsize=8.0, frameon=False,
+                    bbox_to_anchor=(0.5, -0.22), fontsize=8.0, frameon=False,
                     handlelength=1.1, handleheight=1.0, labelspacing=0.40)
     for t in leg.get_texts():
         t.set_color(C_TEXT)
