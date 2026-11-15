@@ -613,19 +613,23 @@ and a half hours was dismissed as "stuck" after eight checks (two
 minutes) and asked for again, which made the queue longer.  It is now
 generous enough to ride out a congested store.
 
-### The four sectors cover the whole cap
+### The by-sector figure covers the North Pacific and the North Atlantic
 
-The by-sector figure used to split the cap into the North Pacific and the
-North Atlantic and left the Barents-Kara wedge unaccounted for.  It is now
-four contiguous sectors, so the width-weighted mean of the four is the cap
-mean exactly (CORe +1 m2/s2, GEFS +0, SEAS5 -0):
+The four-sector tiling was the assistant's own idea and the user never
+asked for it: *"We only do North Atl/Pac... I never asked for Arctic/Barent"*.
+The by-sector figure is back to the two sectors the section was built with,
+and the 60E-120E wedge is simply not in it.  The whole-cap figure remains
+the only place the full 60-90N circle appears.
 
 | sector | longitude | width |
 |---|---|---|
 | `natl` | 300E-60E | 120 deg |
 | `npac` | 120E-240E | 120 deg |
-| `narctic` | 240E-300E | 60 deg |
-| `nbarents` | 60E-120E | 60 deg |
+
+The two sectors cover 240 of the cap's 360 degrees, so the width-weighted
+mean of the two is **not** the cap mean - the sector panels are the
+sector's own mean, measured against the CORe climatology for that same
+sector, and they are not averaged together anywhere.
 
 **A date label centred on its tick hangs half outside its panel.**  On the
 sector figure the panels sit shoulder to shoulder, and the last date of
@@ -807,3 +811,66 @@ of the site quotes.
 run is not the model's own init - the GEFS's 35-day run drifts very little
 (a few hundred m2/s2) and it keeps the observed climate, so the two charts
 are on the same footing where they can be.
+
+## 15 Nov 2026 - the daily wind charts were jumping because the MERGE ate the data
+
+The complaint was that the UKMO, BoM and JMA daily 10 hPa wind charts
+"aren't consistent at different times".  The stored series is the answer:
+the number of members carrying a value on a given day was not constant, and
+it fell in two steps inside the series.
+
+| centre | members | days | the members on the worst day |
+|---|---|---|---|
+| JMA | 155 | 185 | 55 (and 105 on the next window) |
+| UKMO | 62 | 185 | 4 |
+| BoM | 99 | 207 | 22 |
+
+The ensemble mean is taken over the members that hold a value, so a day
+with 55 members and a day with 155 are two different ensembles - the
+chart's jump was that, not the atmosphere.
+
+### The bug is in the MERGE, not in the archive
+
+A pull is made in chunks of lead times, and each chunk's decoded matrix
+holds a cell for EVERY date in the chunk but only the members whose own
+run reaches that date carry a value there.  `merge()` wrote the whole row
+of the incoming chunk over the accumulator:
+
+```python
+A[mi[m], [di[d] for d in d2]] = a2[i]     # the empty cells went too
+```
+
+so at every chunk boundary the chunk's **empty** cells (NaN) landed on top
+of the accumulator's good values.  The chunk's lead window is per member,
+so the damage is dated: the JMA's chunk 0 covers 2 Oct - 29 Jan and chunk 1
+covers 1 Jan - 30 Apr, and the members that started late lose 1 Jan to
+their own chunk-1 start.
+
+The evidence that the archive is innocent:
+
+* the chunk 1 job result was downloaded and decoded on its own: it carries
+  all 150 members over the right lead window (2196-4356 h, the days
+  91.5-181.5 of each member's own run), and every one of its 13,650
+  values that the stored series also holds is **identical** (0 different);
+* 2,175 of them are simply **missing** from the stored series - exactly
+  the cells the NaN overwrite destroyed.
+
+### The fix
+
+`merge()` now writes only the cells that hold a value:
+
+```python
+vals = V[i]
+ok = np.isfinite(vals)
+S[mi[m], cols[ok]] = vals[ok]
+```
+
+### The rebuild costs no queue time
+
+The archive no longer serves the BoM's October inits - the identical
+request that succeeded on 15 November morning now fails with
+`MarsNoDataError` - but the CDS still holds every job result.
+`redecode_lagged.py` downloads each result, decodes it, merges it with the
+fixed merge and deletes the GRIB again.  The UKMO after the rebuild:
+
+    62 members x 185 days (2026-11-01 .. 2027-05-04), 62 members on every day

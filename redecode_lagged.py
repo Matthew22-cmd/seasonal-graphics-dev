@@ -17,7 +17,9 @@ import argparse
 import json
 import os
 import shutil
+import time
 import sys
+from datetime import date
 
 import numpy as np
 
@@ -91,27 +93,50 @@ def main():
 
         acc = [None, None, None, None]
         for jid, what in JOBS[tag]:
-            if st.get(jid) == "done" and not args.keep_grib:
-                print("   %s (%s): already merged" % (what, jid[:8]), flush=True)
-                continue
+            npzp = os.path.join(MDIR, tag, "_redecode_%s.npz" % jid[:8])
             gpath = os.path.join(MDIR, tag, "_redecode_%s.grib" % jid[:8])
-            print("   %s (%s): fetching the result" % (what, jid[:8]), flush=True)
-            try:
-                cds.download_job(jid, gpath)
-            except Exception as e:
-                print("      the result is not there: %s" % str(e)[:200],
+            if os.path.exists(npzp):
+                # the decoded matrix of this job is on disk: the accumulator
+                # is rebuilt from scratch every run, so every job has to be
+                # back in hand, and the download is the slow part
+                z = np.load(npzp, allow_pickle=True)
+                d2 = [date.fromisoformat(str(x)) for x in z["dates"]]
+                a2 = z["m60"]
+                b2 = z["mnh"]
+                members = [int(x) for x in z["members"]]
+                print("   %s (%s): the decoded matrix is cached"
+                      % (what, jid[:8]), flush=True)
+            else:
+                print("   %s (%s): fetching the result" % (what, jid[:8]),
                       flush=True)
-                continue
-            mb = os.path.getsize(gpath) / 1e6
-            try:
-                recs, members = read_lagged_u10(gpath, numbering)
-                d2, a2, b2, per_day = build_matrix(recs, members)
-            finally:
-                if not args.keep_grib and os.path.exists(gpath):
-                    os.remove(gpath)
-            print("      %.0f MB, %d records, %d members, %d dates (%s .. %s)"
-                  % (mb, len(recs), len(members), len(d2),
-                     d2[0] if d2 else "-", d2[-1] if d2 else "-"), flush=True)
+                ok = False
+                for attempt in range(3):
+                    try:
+                        cds.download_job(jid, gpath)
+                        ok = True
+                        break
+                    except Exception as e:
+                        print("      the download failed (%d): %s"
+                              % (attempt + 1, str(e)[:160]), flush=True)
+                        time.sleep(20)
+                if not ok:
+                    print("      the result could not be fetched", flush=True)
+                    continue
+                mb = os.path.getsize(gpath) / 1e6
+                try:
+                    recs, members = read_lagged_u10(gpath, numbering)
+                    d2, a2, b2, per_day = build_matrix(recs, members)
+                finally:
+                    if not args.keep_grib and os.path.exists(gpath):
+                        os.remove(gpath)
+                print("      %.0f MB, %d records, %d members, %d dates (%s .. %s)"
+                      % (mb, len(recs), len(members), len(d2),
+                         d2[0] if d2 else "-", d2[-1] if d2 else "-"), flush=True)
+                if not members:
+                    continue
+                np.savez_compressed(
+                    npzp, dates=np.array([d.isoformat() for d in d2]),
+                    m60=a2, mnh=b2, members=np.array(members))
             if not members:
                 continue
             if acc[0] is None:
