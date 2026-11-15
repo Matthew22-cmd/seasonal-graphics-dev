@@ -1,68 +1,95 @@
 """Rebuild every polar-cap time-height section that has data behind it.
 
-The publisher calls this after the data changes.  The systems are not listed
-here: they are whatever is in data/polar_model_z.json (the seasonal runs and
-the sub-seasonal guidance) plus the EC46 in data/polar_ec46_z.json.  A system
-with no series is not drawn - plot_polar_cap.py removes the chart it would
-have drawn rather than leave one with no data behind it.
+The publisher calls this after the data changes.  The systems are NOT taken
+from whatever happens to be in data/polar_model_z.json: they are the three
+the section is for - the seasonal run, the sub-seasonal GEFS and the ECMWF
+extended range - and a system with no series is not drawn.
+
+  * plot_polar_cap.py removes the chart it would have drawn rather than
+    leave one with no data behind it;
+  * a chart that belongs to a system that is no longer shown (the METFR
+    system 9 section, which the user took out on 14 Nov 2026) is removed
+    here, so it cannot be left behind on the site.
 """
 
-import json
 import os
 import subprocess
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+OUT = os.path.join(HERE, "output", "polar_cap")
 
-# the display name of every system, the same wording the registry uses
-LABELS = {
-    "ecmwf-seas5": "ECMWF SEAS5",
-    "ec46": "ECMWF EC46",
-    "gefsv12": "NOAA GEFSv12",
-    "ukmo-gloseas6": "UKMO GloSeas6-GC5.1",
-    "meteo-france-s9": "METFR System 9",
-    "cmcc-sps4": "CMCC SPS4",
-    "dwd-gcfs2": "DWD GCFS2.2",
-    "eccc-cansips": "ECCC canSIPS",
-    "eccc-canesm5": "ECCC CanESM5",
-    "eccc-gem5": "ECCC GEM5.2",
-    "jma-jra3": "JMA CPS4",
-    "bom-access-s2": "BOM ACCESS-S2",
-}
+# The systems the polar-cap section is for, in the order the page shows them.
+#
+# 14 Nov 2026: the user asked for the ECMWF extended range (the EC46) to be
+# added, and for the METFR system 9 section to come out - so the list is
+# the whole of it, and nothing is drawn that is not on it.
+MODELS = [
+    ("ecmwf-seas5", "ECMWF SEAS5"),
+    ("gefsv12", "NOAA GEFSv12 (35-day extended)"),
+    ("ec46", "ECMWF EC46"),
+]
+
+# the charts that used to be here and are not any more
+RETIRED = ["meteo-france-s9"]
 
 
 def tags():
+    """-> (the tags that have a series on disk, is there a series file at all)."""
+    import json
     out = []
-    p = os.path.join(HERE, "data", "polar_model_z.json")
-    if os.path.exists(p):
+    any_file = False
+    for p in (os.path.join(HERE, "data", "polar_model_z.json"),
+              os.path.join(HERE, "data", "polar_ec46_z.json")):
+        if not os.path.exists(p):
+            continue
+        any_file = True
         try:
-            for k in json.load(open(p)):
-                if k not in out:
-                    out.append(k)
+            d = json.load(open(p))
         except Exception as e:
             print("   the polar series file could not be read: %s" % str(e)[:90])
-    # the EC46 is kept in its own file
-    if os.path.exists(os.path.join(HERE, "data", "polar_ec46_z.json")):
-        if "ec46" not in out:
-            out.append("ec46")
-    return out
+            continue
+        for k in d:
+            if k not in out:
+                out.append(k)
+    return out, any_file
+
+
+def remove_retired():
+    """Take out the charts of the systems that are no longer shown."""
+    for tag in RETIRED:
+        for p in (os.path.join(OUT, "polar_cap_%s.png" % tag),
+                  os.path.join(HERE, "docs", "assets", "polar",
+                               "polar_cap_%s.png" % tag)):
+            if os.path.exists(p):
+                os.remove(p)
+                print("   the retired chart removed: %s" % p)
 
 
 def main():
-    for t in tags():
-        label = LABELS.get(t, t.replace("-", " ").title())
-        r = subprocess.run([sys.executable, "-u", "plot_polar_cap.py", t, label],
+    remove_retired()
+    have, any_file = tags()
+    for tag, label in MODELS:
+        if tag not in have:
+            # No series on this machine.  The chart that is already published
+            # is left alone: the series files are working data that is not
+            # in the repo, and a section with real data behind it is better
+            # than no section at all.  The retired systems are removed by
+            # name above, so nothing is published that was taken out.
+            print("   no series for %s yet" % tag)
+            continue
+        r = subprocess.run([sys.executable, "-u", "plot_polar_cap.py", tag, label],
                            cwd=HERE, capture_output=True, text=True)
         out = (r.stdout or "").strip().splitlines()
         for line in out[-3:]:
             print("   %s" % line)
         if r.returncode != 0:
             print("   the %s section failed: %s"
-                  % (t, (r.stderr or "").strip().splitlines()[-1][:160]))
+                  % (tag, (r.stderr or "").strip().splitlines()[-1][:160]))
         # the same section split into the North Pacific and the North
         # Atlantic, when the sector means are on disk
         r2 = subprocess.run([sys.executable, "-u", "plot_polar_sectors.py",
-                             t, label], cwd=HERE, capture_output=True,
+                             tag, label], cwd=HERE, capture_output=True,
                             text=True)
         out2 = (r2.stdout or "").strip().splitlines()
         for line in out2[-2:]:

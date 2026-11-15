@@ -78,7 +78,59 @@ twelve HGT messages with byte-range requests.
 * The live cycle grows while it is read: f348 and f372 were not there when
   the first pass ran and were there ten minutes later.
 
-### The routes that do NOT work from here
+### GEFSv12 - the 35-DAY extended range (measured 14 Nov 2026)
+
+The 16-day limit above is a property of the **cycle**, not of the archive:
+
+| cycle | range |
+|---|---|
+| 06Z, 12Z, 18Z | f384 = 16 days |
+| **00Z** | **f840 = 35 days** |
+
+The 00Z cycle of 20261114 carries every lead out to f840 in both halves
+(`pgrb2ap5` and `pgrb2bp5`), and all twelve of the reference's levels are
+there at every one of them - the "a" half has 10, 50, 100, 200, 250, 300,
+500, 700, 850, 925, 1000 hPa and the "b" half has 30 and 400 hPa, at f012
+and at f840 alike.
+
+**NCEP thins the ensemble as the lead grows**, and the thinning is the one
+thing that has to be handled carefully:
+
+| lead | members |
+|---|---|
+| f000 - f438 | 31 (gec00 + gep01..gep30) |
+| f444 | 28 |
+| f450 | 25 (gec00 + gep01..gep24) |
+| f558 - f840 | 24 (gep01..gep24 - the control is gone) |
+
+An ensemble mean over 31 members is not the same number as one over 24, so
+the mean must not change membership half way through the chart: it would
+draw a step that is an artefact of the archive and not of the atmosphere.
+**The fetcher therefore uses the member set of the LONGEST lead** - the
+archive only ever drops members, so that set (gep01..gep24) is present at
+every lead - and the same 24 members for the whole 35 days.
+
+The 31-member mean is still checked at one lead, so the size of the
+difference is known rather than assumed.
+
+Two more things the fetch needs to know:
+
+* **the hosts.**  NOMADS answers in bursts and sometimes not at all from a
+  given machine; the AWS open-data bucket serves the same tree verbatim.
+  The fetcher probes both once at the start and drops the hosts that do not
+  answer - otherwise every one of the ~12,000 byte-range requests pays the
+  full timeout.
+* **the S3 listing is paginated.**  A cycle directory holds thousands of
+  keys (every member at every lead), so the continuation token is followed
+  until the listing ends, and the listing is done with `list-type=2` and an
+  explicit prefix.
+
+The decoded leads are kept in `data/polar_gefs_jobs.json` and the series is
+written into the cache after EVERY lead, so a run that is interrupted keeps
+what it had; `fetch_polar_gefs.py --from-state` puts the series back
+together without asking the archive for a byte.
+
+### The route that does NOT work from here
 
 | route | answer |
 |---|---|
@@ -93,7 +145,26 @@ twelve HGT messages with byte-range requests.
 file that does not, so a 403 on a listing means "no such tree", not "no
 permission".)
 
-## (B) ECMWF EC46 - BLOCKED BY THE LICENCE
+## (B) ECMWF EC46 - the licence is an API call, not a click
+
+The licence CAN be accepted by the API (found in the R package
+CopernicusClimate, `R/licenses.R`):
+
+    GET  {store}/api/profiles/v1/account/licences          what is accepted
+    GET  {store}/api/catalogue/v1/vocabularies/licences    the catalogue
+    PUT  {store}/api/profiles/v1/account/licences/<id>      accept one
+         body: {"revision": N}                              (answers 201)
+
+The S2S licence is **`s2s-licence`, revision 5**, and the `scope` field of
+the catalogue says whether a licence belongs to the dataset or to the portal.
+The store's base is `https://ecds.ecmwf.int/api` (ECDS) or
+`https://cds.climate.copernicus.eu/api` (CDS) - **the same key works on
+both**.  `fetch_polar_ec46.py` now accepts the licence itself if it has not
+been taken, so the EC46 does not wait for a manual click.
+
+The earlier conclusion - "there is no API for it" - was wrong: the endpoints
+that answer 404 are `/api/licences` and `/api/retrieve/v1/licences`; the
+account's licence list lives under `/api/profiles/v1/account/licences`.
 
 ### The route and the request
 
@@ -119,7 +190,7 @@ The key in `.cdsapirc` works on ECDS as well; the key's own `url:` field
 stays the CDS and is not used here.  `data_format` is an INPUT, not an
 output; `outputs.asset.value.type` must be the dict `{"type": "file"}`.
 
-### The blocker
+### The blocker (as it was)
 
 Every request is refused with
 
@@ -137,14 +208,15 @@ What was tried:
   well-formed request reaches the licence gate;
 * `GET /api/retrieve/v1/processes` - 200, the three processes are
   `s2s-forecasts`, `s2s-reforecasts`, `tigge-forecasts`;
-* `GET /api/licences` and `GET /api/retrieve/v1/licences` - 404: **there is
-  no API to accept the licence**.  It has to be ticked by hand in the web UI
-  at the link above.
+* `GET /api/licences` and `GET /api/retrieve/v1/licences` - 404, which is
+  where the wrong conclusion came from: the account's licence list is not
+  under those paths, it is under
+  `GET /api/profiles/v1/account/licences`, and it can be written with a PUT.
 
-So the EC46 series cannot be built until the licence is accepted.  The
-script `fetch_polar_ec46.py` is ready for it and writes **nothing** while
-the licence is refused - a chart must never be published without real data
-behind it.  When the licence is accepted it will write the `ec46` key in
+So the EC46 series is built as soon as the licence is accepted - the script
+does that itself now - and it writes **nothing** while the licence is
+refused: a chart must never be published without real data behind it.  When
+the licence is accepted it will write the `ec46` key in
 `data/polar_model_z.json` in the same shape as the other records.
 
 Two things to know about EC46 when it does run:

@@ -35,9 +35,31 @@ The route (measured, not assumed):
     messages is fetched with an HTTP Range request (about 210 kB each)
     instead of the whole 15-90 MB file.
 
-The ensemble mean is computed here from the 31 member files rather than
-taken from NCEP's own `geavg` file, because `geavg` is only published once
-the whole ensemble is done, and the live cycle is still in production.
+The ensemble mean is computed here from the member files rather than taken
+from NCEP's own `geavg` file, because `geavg` is only published once the whole
+ensemble is done, and the live cycle is still in production.
+
+THE 35-DAY EXTENDED RANGE (measured on the 20261114 00Z cycle)
+--------------------------------------------------------------
+Only the **00Z** cycle carries the full extended range: the 06Z, 12Z and 18Z
+cycles of the same day stop at f384 (16 days), while the 00Z cycle runs to
+**f840 = 35 days**.  So the cycle is the first thing the fetcher decides.
+
+NCEP thins the ensemble as the lead grows, and the thinning is not
+arbitrary - it is the *last* lead that decides:
+
+    f000 - f438   31 members (gec00 + gep01..gep30)
+    f444          28 members
+    f450          25 members (gec00 + gep01..gep24)
+    f558 - f840   24 members (gep01..gep24 - the control is gone)
+
+An ensemble mean over 31 members is not the same number as one over 24, so
+the mean cannot change membership half way through the chart: it would draw
+a step that is an artefact of the archive, not of the atmosphere.  The fetcher
+therefore takes the member set of the **longest** lead (the archive only ever
+drops members, so that set is present at every lead) and uses the same 24
+members for the whole 35 days.  The 31-member mean is still checked at one
+lead, so the size of the difference is known rather than assumed.
 """
 import json
 import os
@@ -61,9 +83,8 @@ STATE = os.path.join(DATA, "polar_gefs_jobs.json")
 TAG = "gefsv12"
 
 # the two hosts that serve the same tree
-NOMADS = ("https://nomads.ncep.noaa.gov/pub/data/nccf/com/gens/prod/"
-          "gefs.{date}/{hour}/")
-MIRROR = "https://noaa-gefs-pds.s3.amazonaws.com/gefs.{date}/{hour}/"
+S3_ROOT = "https://noaa-gefs-pds.s3.amazonaws.com/"
+NOMADS_ROOT = ("https://nomads.ncep.noaa.gov/pub/data/nccf/com/gens/prod/")
 
 # the GRIB2 "HGT" is geopotential metres; the series is in m2/s2
 G0 = 9.80665
@@ -77,14 +98,14 @@ for _l in (30, 400):
 
 PARTS = {"a": "pgrb2ap5/", "b": "pgrb2bp5/"}
 
-# the forecast length: the S2S product runs out to 16 days
-# The 00Z cycle of the GEFS v12 carries the FULL extended range - 840 hours,
-# 35 days. The 06Z, 12Z and 18Z cycles of the same day are cut at 384 hours
-# (16 days), so the cycle that is chosen decides how long the chart can run.
+# the forecast length: the 00Z cycle of the GEFS v12 carries the FULL
+# extended range - 840 hours, 35 days.  The 06Z, 12Z and 18Z cycles of the
+# same day are cut at 384 hours (16 days), so the cycle that is chosen
+# decides how long the chart can run.
 MAX_LEAD_H = 35 * 24
 
 # how many requests at a time
-THREADS = 10
+THREADS = 20
 
 UA = {"User-Agent": "Mozilla/5.0 (seas5 polar cap fetcher)"}
 
@@ -92,9 +113,40 @@ UA = {"User-Agent": "Mozilla/5.0 (seas5 polar cap fetcher)"}
 DATE = None
 HOUR = None
 
+# the hosts that answer, in the order they are tried
+HOSTS = []
+
 
 # ------------------------------------------------------------------ the http
-def get(url, headers=None, tries=4, timeout=180):
+def live_hosts():
+    """-> the hosts that answer, in the order they are tried.
+
+    NOMADS answers in bursts and sometimes not at all from a given machine;
+    the AWS open-data bucket serves the same tree verbatim and has no such
+    behaviour.  Probing once at the start and dropping the hosts that do not
+    answer keeps the thousands of byte-range requests from each paying the
+    full timeout.
+    """
+    out = []
+    for name, root in (("aws", S3_ROOT), ("nomads", NOMADS_ROOT)):
+        url = root
+        try:
+            r = requests.get(url, headers=UA, timeout=15, stream=True)
+            # any answer at all - even a 403 for a directory that does not
+            # exist - means the host is reachable
+            out.append(name)
+            print("   the host answers: %s (%d)" % (url, r.status_code),
+                  flush=True)
+            r.close()
+        except Exception as e:                      # noqa: BLE001
+            print("   the host does not answer: %s (%s)"
+                  % (url, type(e).__name__), flush=True)
+    if not out:
+        raise RuntimeError("no GEFS host answers from here")
+    return out
+
+
+def get(url, headers=None, tries=4, timeout=120):
     """A GET with a few retries: NOMADS answers 503 in bursts."""
     h = dict(UA)
     if headers:
@@ -114,15 +166,23 @@ def get(url, headers=None, tries=4, timeout=180):
     raise RuntimeError("%s -> %s" % (url, last))
 
 
-def candidates(path):
-    """The same file on every host that serves the tree."""
-    return [t.format(date=DATE, hour=HOUR) + path for t in (NOMADS, MIRROR)]
+def cycle_url(host, path=""):
+    """The URL of a file (or a directory) of the current cycle."""
+    rel = "gefs.%s/%s/%s" % (DATE, HOUR, path)
+    if host == "aws":
+        return S3_ROOT + rel
+    return NOMADS_ROOT + rel
+
+
+def file_urls(path):
+    """Every URL that serves one file of the current cycle."""
+    return [cycle_url(h, path) for h in (HOSTS or ["aws", "nomads"])]
 
 
 def get_first(path, headers=None, tries=4):
     """The first host that answers wins."""
     last = None
-    for url in candidates(path):
+    for url in file_urls(path):
         try:
             return get(url, headers=headers, tries=tries)
         except Exception as e:                      # noqa: BLE001
@@ -131,7 +191,7 @@ def get_first(path, headers=None, tries=4):
 
 
 def head_size(path):
-    for url in candidates(path):
+    for url in file_urls(path):
         try:
             r = requests.head(url, headers=UA, timeout=60)
             if r.status_code == 200:
@@ -141,94 +201,167 @@ def head_size(path):
     raise RuntimeError("no size for %s" % path)
 
 
-def listing(url):
-    """The names in a directory listing (Apache HTML or the S3 XML)."""
-    r = get(url)
-    t = re.sub(r"<script.*?</script>", "", r.text, flags=re.S)
-    out = []
-    for m in re.finditer(r"HREF=\"([^\"]+)\"", t, flags=re.I):
-        n = m.group(1)
-        if n.startswith("/") or n.startswith("?") or n == "../":
-            continue
-        out.append(n)
-    if not out:
-        for m in re.finditer(r"<Key>([^<]*)</Key>", t):
-            n = m.group(1)
-            if n.endswith("/"):
+def list_keys(path):
+    """-> the names of the files in one directory of the cycle.
+
+    The S3 listing is an XML document that is PAGINATED - a directory holds
+    thousands of keys (every member at every lead) - so the continuation
+    token is followed until the listing ends.  The NOMADS listing is an
+    Apache HTML index.
+    """
+    for host in (HOSTS or ["aws", "nomads"]):
+        if host == "aws":
+            out = []
+            token = None
+            while True:
+                url = (S3_ROOT + "?list-type=2&max-keys=1000&prefix=" +
+                       "gefs.%s/%s/%s" % (DATE, HOUR, path))
+                if token:
+                    url += "&continuation-token=%s" % requests.utils.quote(token)
+                try:
+                    r = get(url)
+                except Exception:                   # noqa: BLE001
+                    break
+                t = r.text
+                out += re.findall(r"<Key>([^<]*)</Key>", t)
+                m = re.search(r"<NextContinuationToken>([^<]+)</NextContinuationToken>",
+                              t)
+                if m and "<IsTruncated>true</IsTruncated>" in t:
+                    token = m.group(1)
+                    continue
+                break
+            if out:
+                return out
+        else:
+            try:
+                r = get(cycle_url(host, path))
+            except Exception:                       # noqa: BLE001
                 continue
-            out.append(n.rsplit("/", 1)[-1])
-    return out
-
-
-def subdirs(url):
-    """The sub-directory names of one directory (the last path part)."""
-    r = get(url)
-    t = re.sub(r"<script.*?</script>", "", r.text, flags=re.S)
-    out = []
-    for m in re.finditer(r"HREF=\"([^\"]+)\"", t, flags=re.I):
-        n = m.group(1).rstrip("/")
-        if n.startswith("/") or n.startswith("?") or n == "..":
-            continue
-        out.append(n.rsplit("/", 1)[-1])
-    if not out:
-        for m in re.finditer(r"<Prefix>([^<]*)</Prefix>", t):
-            n = m.group(1).rstrip("/")
-            if n:
+            t = re.sub(r"<script.*?</script>", "", r.text, flags=re.S)
+            out = []
+            for m in re.finditer(r"HREF=\"([^\"]+)\"", t, flags=re.I):
+                n = m.group(1)
+                if n.startswith("/") or n.startswith("?") or n == "../":
+                    continue
                 out.append(n.rsplit("/", 1)[-1])
-    return out
+            if out:
+                return out
+    raise RuntimeError("no listing for %s" % path)
 
 
 # ------------------------------------------------------------------ the cycle
-def find_cycle():
-    """-> (date, hour) of the newest cycle that has member files."""
-    dates = set()
-    for tmpl in (NOMADS, MIRROR):
-        root = tmpl.split("gefs.")[0]
+def s3_prefixes(prefix):
+    """-> the common prefixes under a prefix (the S3 delimiter listing)."""
+    out = []
+    token = None
+    while True:
+        url = (S3_ROOT + "?list-type=2&max-keys=1000&delimiter=/&prefix=" +
+               prefix)
+        if token:
+            url += "&continuation-token=%s" % requests.utils.quote(token)
         try:
-            for n in subdirs(root):
-                if n.startswith("gefs."):
-                    dates.add(n.split(".")[1])
-        except Exception:                            # noqa: BLE001
+            r = get(url)
+        except Exception:                           # noqa: BLE001
+            break
+        t = r.text
+        out += re.findall(r"<Prefix>([^<]*)</Prefix>", t)
+        m = re.search(r"<NextContinuationToken>([^<]+)</NextContinuationToken>",
+                      t)
+        if m and "<IsTruncated>true</IsTruncated>" in t:
+            token = m.group(1)
             continue
+        break
+    return out
+
+
+def find_cycle():
+    """-> (date, hour) of the newest cycle that carries the extended range.
+
+    The 00Z cycle is the one with the full 35 days, so it is preferred over
+    the 06Z/12Z/18Z cycles of the same day.
+    """
+    dates = set()
+    if "aws" in (HOSTS or ["aws"]):
+        for p in s3_prefixes("gefs."):
+            m = re.search(r"gefs\.(\d{8})/", p)
+            if m:
+                dates.add(m.group(1))
+    if not dates and "nomads" in (HOSTS or []):
+        try:
+            r = get(NOMADS_ROOT)
+            for m in re.finditer(r"HREF=\"([^\"]*gefs\.\d{8})/\"", r.text):
+                dates.add(m.group(1).split(".")[-1])
+        except Exception:                            # noqa: BLE001
+            pass
+    if not dates:
+        raise RuntimeError("no GEFS cycle with member files found")
+
     for d in sorted(dates, reverse=True):
-        for tmpl in (NOMADS, MIRROR):
-            root = tmpl.split("gefs.")[0] + "gefs.%s/" % d
+        hours = []
+        if "aws" in (HOSTS or ["aws"]):
+            for p in s3_prefixes("gefs.%s/" % d):
+                m = re.search(r"gefs\.\d{8}/(\d{2})/", p)
+                if m:
+                    hours.append(m.group(1))
+        if not hours:
             try:
-                hours = [h for h in subdirs(root) if re.fullmatch(r"\d{2}", h)]
+                r = get(NOMADS_ROOT + "gefs.%s/" % d)
+                hours = re.findall(r"HREF=\"(\d{2})/\"", r.text)
             except Exception:                        # noqa: BLE001
-                continue
-            # the 00Z cycle first: it is the one with the full 35-day range
-            for h in ["00"] + sorted((x for x in hours if x != "00"),
-                                     reverse=True):
-                if has_members(tmpl, d, h):
-                    return d, h
+                pass
+        # the 00Z cycle first: it is the one with the full 35-day range
+        for h in ["00"] + sorted((x for x in hours if x != "00"), reverse=True):
+            if has_members(d, h):
+                return d, h
     raise RuntimeError("no GEFS cycle with member files found")
 
 
-def has_members(tmpl, d, h):
+def has_members(d, h):
     """Is there a member file in this cycle?  One HEAD is enough."""
-    url = (tmpl.format(date=d, hour=h) +
-           "atmos/pgrb2ap5/gep01.t00z.pgrb2a.0p50.f000")
+    global DATE, HOUR
+    old = (DATE, HOUR)
+    DATE, HOUR = d, h
     try:
+        url = cycle_url("aws" if "aws" in (HOSTS or ["aws"]) else "nomads",
+                        "atmos/pgrb2ap5/gep01.t00z.pgrb2a.0p50.f000")
         r = requests.head(url, headers=UA, timeout=60)
         return r.status_code == 200
     except Exception:                                # noqa: BLE001
         return False
+    finally:
+        DATE, HOUR = old
 
 
-def member_prefixes(tmpl, d, h):
-    """-> the member file prefixes of the cycle: gec00 (control) + gep01.."""
-    names = listing(tmpl.format(date=d, hour=h) + "atmos/pgrb2ap5/")
-    pref = set()
-    for n in names:
-        if n.endswith(".idx"):
-            continue
-        p = n.split(".")[0]
-        if p.startswith("gec") or p.startswith("gep"):
-            pref.add(p)
-    ctl = sorted(p for p in pref if p.startswith("gec"))
-    per = sorted(p for p in pref if p.startswith("gep"))
-    return ctl + per
+def members_by_lead():
+    """-> {part: {member: {lead: True}}}, from the two directory listings.
+
+    One listing of each half gives every member at every lead, which is what
+    decides the member set of the series: the archive only ever DROPS
+    members, so the members that are still there at the longest lead are the
+    ones that are there at every lead.
+    """
+    out = {}
+    for part in ("a", "b"):
+        names = list_keys("atmos/%s" % PARTS[part])
+        d = {}
+        for n in names:
+            if n.endswith(".idx"):
+                continue
+            m = re.search(r"(ge[cp]\d+)\.t00z\.pgrb2[ab]\.0p50\.f(\d{3})", n)
+            if not m:
+                continue
+            d.setdefault(m.group(1), set()).add(int(m.group(2)))
+        out[part] = d
+    return out
+
+
+def common_members(by_lead, longest):
+    """-> the members that are present at the longest lead, in both halves."""
+    sets = []
+    for part in ("a", "b"):
+        sets.append(set(m for m, leads in by_lead[part].items()
+                        if longest in leads))
+    return sorted(set.intersection(*sets)) if sets else []
 
 
 # ------------------------------------------------------------------ the idx
@@ -317,18 +450,93 @@ def read_cap_mean(path):
     return row, srow, t
 
 
+def build_record(out, date, hour):
+    """-> the record for the cache, from the decoded leads."""
+    keys = sorted(out, key=lambda k: int(k))
+    times = [out[k]["time"] for k in keys]
+    values = [out[k]["values"] for k in keys]
+    nmem = min(out[k]["members"] for k in keys)
+    # the sector means, where the members carried them
+    sectors = {}
+    if all(out[k].get("sectors") for k in keys):
+        # each lead carries the twelve level values for that sector
+        sectors = {name: [out[k]["sectors"][name] for k in keys]
+                   for name in out[keys[0]]["sectors"]}
+    rec = {"times": times, "values": values, "members": nmem,
+           "levels": list(LEVELS),
+           "run": "%s %sZ" % (date, hour),
+           "source": "NOAA GEFS v12 (0.50 deg pgrb2a+pgrb2b), the ensemble "
+                     "mean of %d members" % nmem,
+           "lead_days": (int(keys[-1]) + 12) // 24}
+    if sectors:
+        rec["sectors"] = sectors
+    return rec
+
+
+def write_cache(rec):
+    """Into the shared cache, under this script's own key only.
+
+    The file is written whole, but every other model's record is left
+    exactly as it was found.  It is written after every lead, so a run that
+    is interrupted keeps everything it had already decoded.
+    """
+    cache = {}
+    if os.path.exists(CACHE):
+        with open(CACHE) as f:
+            cache = json.load(f)
+    cache[TAG] = rec
+    with open(CACHE + ".tmp", "w") as f:
+        json.dump(cache, f)
+    os.replace(CACHE + ".tmp", CACHE)
+
+
+def from_state():
+    """Rebuild the cache from the state file, without asking for anything.
+
+    The state file holds every decoded lead, so a run that was interrupted
+    (or a machine that was rebuilt) can put the series back together without
+    fetching a byte.
+    """
+    if not os.path.exists(STATE):
+        print("   there is no state file yet")
+        return
+    st = json.load(open(STATE))
+    out = {k: v for k, v in st.get("leads", {}).items()
+           if v.get("status") == "decoded"}
+    if not out:
+        print("   the state file holds no decoded lead")
+        return
+    date = st.get("date") or ""
+    hour = st.get("hour") or ""
+    rec = build_record(out, date, hour)
+    write_cache(rec)
+    print("   the %s series rebuilt from the state file: %d days, %s to %s"
+          % (TAG, len(rec["times"]), rec["times"][0], rec["times"][-1]),
+          flush=True)
+
+
 # ------------------------------------------------------------------ the main
 def main():
-    global DATE, HOUR
+    global DATE, HOUR, HOSTS
+    if "--from-state" in sys.argv:
+        from_state()
+        return
+    HOSTS = live_hosts()
     date, hour = find_cycle()
     DATE, HOUR = date, hour
-    members = member_prefixes(NOMADS.format(date=date, hour=hour), date, hour)
     print("   the GEFS v12 cycle: %s %sZ" % (date, hour), flush=True)
-    print("   the host: %s" % NOMADS.format(date=date, hour=hour), flush=True)
-    print("   the members: %d (%s ... %s)"
+    print("   the host: %s" % cycle_url(HOSTS[0]), flush=True)
+
+    by_lead = members_by_lead()
+    longest = MAX_LEAD_H
+    members = common_members(by_lead, longest)
+    if not members:
+        raise RuntimeError("no member carries the lead f%03d" % longest)
+    print("   the members that carry the whole range: %d (%s ... %s)"
           % (len(members), members[0], members[-1]), flush=True)
 
     st = json.load(open(STATE)) if os.path.exists(STATE) else {"leads": {}}
+    st["date"], st["hour"] = date, hour
     out = {}
 
     # the daily 12Z leads: the 12Z value of a day is 12 + 24k hours from the
@@ -368,6 +576,9 @@ def main():
         with open(STATE + ".tmp", "w") as f:
             json.dump(st, f, indent=1)
         os.replace(STATE + ".tmp", STATE)
+        # and into the cache straight away, so an interrupted run keeps
+        # everything it had already decoded
+        write_cache(build_record(out, date, hour))
         print("      %d members, valid %s, 10 hPa = %.0f m2/s2 (%.0f m)"
               % (len(got), t, row[10], row[10] / G0), flush=True)
 
@@ -376,37 +587,13 @@ def main():
         return
 
     # the record, in the shape the seasonal puller writes
-    keys = sorted(out, key=lambda k: int(k))
-    times = [out[k]["time"] for k in keys]
-    values = [out[k]["values"] for k in keys]
-    nmem = max(out[k]["members"] for k in keys)
-    # the sector means, where the members carried them
-    sectors = {}
-    if all(out[k].get("sectors") for k in keys):
-        # each lead carries the twelve level values for that sector
-        sectors = {name: [out[k]["sectors"][name] for k in keys]
-                   for name in out[keys[0]]["sectors"]}
-    rec = {"times": times, "values": values, "members": nmem,
-           "levels": list(LEVELS),
-           "run": "%s %sZ" % (date, hour),
-           "source": "NOAA GEFS v12 (0.50 deg pgrb2a+pgrb2b), the ensemble "
-                     "mean of %d members" % nmem}
-    if sectors:
-        rec["sectors"] = sectors
+    rec = build_record(out, date, hour)
 
-    # into the shared cache, under this script's own key only: the file is
-    # written whole, but every other model's record is left exactly as it
-    # was found
-    cache = {}
-    if os.path.exists(CACHE):
-        with open(CACHE) as f:
-            cache = json.load(f)
-    cache[TAG] = rec
-    with open(CACHE + ".tmp", "w") as f:
-        json.dump(cache, f)
-    os.replace(CACHE + ".tmp", CACHE)
+    # into the shared cache, under this script's own key only
+    write_cache(rec)
     print("   the %s series: %s (%d days, %s to %s)"
-          % (TAG, CACHE, len(times), times[0], times[-1]), flush=True)
+          % (TAG, CACHE, len(rec["times"]), rec["times"][0], rec["times"][-1]),
+          flush=True)
 
 
 if __name__ == "__main__":

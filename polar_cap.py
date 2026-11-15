@@ -645,7 +645,7 @@ if __name__ == "__main__":
 
 
 def plot_domain_map(ax):
-    """Draw the domains on a polar map: the polar cap and the two sectors.
+    """Draw the domains on a REAL map: the polar cap and the two sectors.
 
     The North Pole is at the centre, Greenwich at the bottom, so the Pacific
     sector (120E-240E) sits at the top of the map and the Atlantic sector
@@ -653,9 +653,15 @@ def plot_domain_map(ax):
     The azimuthal-equidistant projection is scaled so that 30N is the outer
     ring of the map, which leaves the polar cap itself filling the middle
     half of it.
+
+    The map is drawn from Natural Earth's 1:50m land outline (committed to
+    the repo as data/ne_50m_land.geojson, so the figure never depends on a
+    download at build time): the reader can see that the Pacific sector is
+    the one over the Bering Sea and the Atlantic sector the one over the
+    Greenland Sea, which is the whole point of splitting the cap.
     """
     import matplotlib.patches as mpatches
-    from matplotlib.path import Path
+    from matplotlib.collections import PolyCollection
 
     cap_r = (90.0 - 60.0) / 60.0            # the 60N edge, as a fraction
     edge_r = (90.0 - 30.0) / 60.0           # the outer ring of the map
@@ -665,68 +671,133 @@ def plot_domain_map(ax):
         a = np.radians(lon)
         return r * np.sin(a), -r * np.cos(a)
 
-    # the whole cap, in a pale grey
-    ax.add_patch(mpatches.Circle((0, 0), cap_r, facecolor="#eef1f5",
-                                  edgecolor="none", zorder=1))
-    # the Arctic sector that is left out (240E-300E), a touch darker
-    ax.add_patch(_wedge(240.0, 300.0, cap_r, "#dfe4ea"))
+    # the sea, and then the land on top of it
+    ocean = mpatches.Circle((0, 0), edge_r, facecolor="#eef3f7",
+                             edgecolor="none", zorder=1)
+    ax.add_patch(ocean)
 
+    land = _land_polygons()
+    if land is not None:
+        pc = PolyCollection(land, facecolors="#d9d3c6",
+                            edgecolors="#b3aa9a", linewidths=0.35, zorder=2)
+        pc.set_clip_path(ocean)
+        ax.add_collection(pc)
+
+    # the sectors, over the map, so the geography shows through them
+    ax.add_patch(_wedge(240.0, 300.0, cap_r, "#cfd6de", alpha=0.85))
     for name, colour in (("npac", "#f4b740"), ("natl", "#3d7fd1")):
         lon0, lon1 = SECTORS[name]
-        ax.add_patch(_wedge(lon0, lon1, cap_r, colour))
+        ax.add_patch(_wedge(lon0, lon1, cap_r, colour, alpha=0.62))
 
     # the graticule: the latitude circles and the longitude spokes
     for lat in (70.0, 80.0):
         r = (90.0 - lat) / 60.0
         th = np.linspace(0, 2 * np.pi, 361)
-        ax.plot(r * np.sin(th), -r * np.cos(th), color="#9ca3af",
-                lw=0.7, ls=(0, (2, 3)), zorder=3)
+        ax.plot(r * np.sin(th), -r * np.cos(th), color="#8b9199",
+                lw=0.7, ls=(0, (2, 3)), zorder=4)
     for lon in range(0, 360, 30):
         x0, y0 = pt(lon, 60.0)
         x1, y1 = pt(lon, 90.0)
-        ax.plot([x0, x1], [y0, y1], color="#9ca3af", lw=0.6,
-                ls=(0, (2, 3)), zorder=3)
+        ax.plot([x0, x1], [y0, y1], color="#8b9199", lw=0.6,
+                ls=(0, (2, 3)), zorder=4)
     # the edge of the cap, drawn solid
     th = np.linspace(0, 2 * np.pi, 361)
-    ax.plot(cap_r * np.sin(th), -cap_r * np.cos(th), color="#6b7280",
-            lw=1.1, zorder=4)
+    ax.plot(cap_r * np.sin(th), -cap_r * np.cos(th), color="#4b5563",
+            lw=1.2, zorder=6)
     # the outer ring of the map, at 30N
     ax.add_patch(mpatches.Circle((0, 0), edge_r, facecolor="none",
-                                  edgecolor="#c8c5c2", lw=0.9, zorder=3))
+                                  edgecolor="#9aa0a6", lw=0.9, zorder=5))
+
+    # the two sectors, named on the map
+    import matplotlib.patheffects as pe
+    halo = [pe.withStroke(linewidth=2.2, foreground="white")]
+    for name, colour in (("npac", "#7a5200"), ("natl", "#123f77")):
+        lon0, lon1 = SECTORS[name]
+        mid = (lon0 + (lon1 - lon0 if lon1 > lon0 else lon1 + 360 - lon0) / 2.0)
+        x, y = pt(mid % 360.0, 74.0)
+        ax.text(x, y, SECTOR_LABELS.get(name, name), fontsize=8.0,
+                fontweight="bold", color=colour, ha="center", va="center",
+                zorder=7, path_effects=halo)
 
     # the latitude and longitude labels, on the outer ring
     for lat, text in ((60.0, "60°N"), (30.0, "30°N")):
         x, y = pt(0.0, lat)
-        ax.text(x * 1.10, y * 1.10, text, fontsize=8.0, color=C_MUTED,
-                ha="center", va="center", zorder=5)
+        ax.text(x * 1.09, y * 1.09, text, fontsize=8.0, color=C_MUTED,
+                ha="center", va="center", zorder=8, path_effects=halo)
     for lon, text in ((0, "0°"), (90, "90°E"), (180, "180°"), (270, "90°W")):
         x, y = pt(lon, 30.0)
-        ax.text(x * 1.10, y * 1.10, text, fontsize=8.0, color=C_MUTED,
-                ha="center", va="center", zorder=5)
+        ax.text(x * 1.09, y * 1.09, text, fontsize=8.0, color=C_MUTED,
+                ha="center", va="center", zorder=8, path_effects=halo)
 
-    ax.set_xlim(-1.30, 1.30)
-    ax.set_ylim(-1.30, 1.30)
+    ax.set_xlim(-1.22, 1.22)
+    ax.set_ylim(-1.22, 1.22)
     ax.set_aspect("equal")
     ax.axis("off")
 
     # the legend
     handles = [
-        mpatches.Patch(facecolor="#f4b740", edgecolor="none",
+        mpatches.Patch(facecolor="#f4b740", edgecolor="none", alpha=0.62,
                        label="North Pacific (120°E-240°E)"),
-        mpatches.Patch(facecolor="#3d7fd1", edgecolor="none",
+        mpatches.Patch(facecolor="#3d7fd1", edgecolor="none", alpha=0.62,
                        label="North Atlantic (300°E-60°E)"),
-        mpatches.Patch(facecolor="#dfe4ea", edgecolor="none",
+        mpatches.Patch(facecolor="#cfd6de", edgecolor="none", alpha=0.85,
                        label="the rest of the polar cap"),
+        mpatches.Patch(facecolor="#d9d3c6", edgecolor="#b3aa9a",
+                       label="land"),
     ]
     leg = ax.legend(handles=handles, loc="lower center",
-                    bbox_to_anchor=(0.5, -0.13), fontsize=8.5, frameon=False,
-                    handlelength=1.1, handleheight=1.0, labelspacing=0.45)
+                    bbox_to_anchor=(0.5, -0.13), fontsize=8.0, frameon=False,
+                    handlelength=1.1, handleheight=1.0, labelspacing=0.40)
     for t in leg.get_texts():
         t.set_color(C_TEXT)
     return ax
 
 
-def _wedge(lon0, lon1, rmax, colour):
+# the land outline of the map, read once
+_LAND_POLY = None
+
+# Natural Earth's 1:50m land, committed to the repo (public domain) so the
+# figure never needs a download at build time
+LAND_FILE = os.path.join(DATA, "ne_50m_land.geojson")
+
+
+def _land_polygons():
+    """-> the land as a list of projected rings, or None.
+
+    The projection is the same azimuthal-equidistant polar projection the
+    map uses: r = (90 - lat) / 60, with the pole at the centre and Greenwich
+    at the bottom.  The longitudes of a ring are unwrapped first, so a
+    coastline that crosses the antimeridian (Chukotka, the Aleutians) is
+    drawn the short way round the pole instead of straight across the map.
+    """
+    global _LAND_POLY
+    if _LAND_POLY is not None:
+        return _LAND_POLY
+    _LAND_POLY = []
+    if not os.path.exists(LAND_FILE):
+        return _LAND_POLY
+    import json
+    with open(LAND_FILE) as f:
+        d = json.load(f)
+    for feat in d.get("features", []):
+        geom = feat.get("geometry") or {}
+        coords = geom.get("coordinates") or []
+        polys = coords if geom.get("type") == "MultiPolygon" else [coords]
+        for poly in polys:
+            for ring in poly:
+                lon = np.array([p[0] for p in ring], float)
+                lat = np.array([p[1] for p in ring], float)
+                if lat.size < 3:
+                    continue
+                a = np.unwrap(np.radians(lon))
+                r = (90.0 - lat) / 60.0
+                x = r * np.sin(a)
+                y = -r * np.cos(a)
+                _LAND_POLY.append(np.column_stack([x, y]))
+    return _LAND_POLY
+
+
+def _wedge(lon0, lon1, rmax, colour, alpha=1.0):
     """A wedge of the polar map: lon0 to lon1 (degrees east), pole to rmax."""
     import matplotlib.patches as mpatches
     from matplotlib.path import Path
@@ -744,7 +815,7 @@ def _wedge(lon0, lon1, rmax, colour):
     verts = [(0.0, 0.0)] + [pt(l) for l in lons]
     codes = [Path.MOVETO] + [Path.LINETO] * len(lons)
     patch = mpatches.PathPatch(Path(verts, codes), facecolor=colour,
-                               edgecolor="none", zorder=2)
+                               edgecolor="none", alpha=alpha, zorder=3)
     return patch
 
 
@@ -797,9 +868,9 @@ def plot_sector_sections(times, sectors, levels, out_path, title, subtitle,
         axes.append(ax)
 
     # the map of the domains the panels cover
-    map_ax = fig.add_axes([0.775, 0.115, 0.205, 0.695])
+    map_ax = fig.add_axes([0.762, 0.105, 0.225, 0.705])
     plot_domain_map(map_ax)
-    fig.text(0.775, 0.822, "the domains", fontsize=11, fontweight="bold",
+    fig.text(0.762, 0.822, "the domains", fontsize=11, fontweight="bold",
              color=C_TEXT, ha="left", va="bottom")
 
     for i, name in enumerate(names):

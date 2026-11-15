@@ -92,11 +92,13 @@ MODELS = {
                         "climate store. A sub-seasonal system: its plume covers the "
                         "first six weeks of the run, not whole seasons."),
     "gefsv12":         ("NOAA GEFSv12",
-                        "NOAA GEFS v12 sub-seasonal ensemble \u00b7 31 members "
-                        "\u00b7 16 days, which is the whole horizon NOAA "
-                        "publishes for the ensemble \u00b7 the polar cap's "
-                        "geopotential height anomaly on the same scale as the "
-                        "reanalysis"),
+                        "NOAA GEFS v12 sub-seasonal ensemble \u00b7 35 days, from "
+                        "the 00Z cycle, which is the one that carries the "
+                        "extended range \u00b7 the ensemble mean of the 24 members "
+                        "that are present at every one of those 35 days, so the "
+                        "mean does not change membership half way through the "
+                        "chart \u00b7 the polar cap's geopotential height anomaly "
+                        "on the same scale as the reanalysis"),
     "ec46":            ("ECMWF EC46",
                         "ECMWF sub-seasonal ensemble (EC46) \u00b7 51 members \u00b7 a "
                         "46-day run, so this section covers the first six weeks of "

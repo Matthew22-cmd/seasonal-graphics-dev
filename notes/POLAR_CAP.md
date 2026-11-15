@@ -130,6 +130,34 @@ The colour bar is drawn from a clean `ScalarMappable`, never from the last
 `contourf` - otherwise it inherits that segment's alpha and looks washed
 out.
 
+## The domain map is a REAL map (14 Nov 2026)
+
+The panel beside the two sector sections used to be a schematic: a circle
+with two wedges in it, which says where the sectors are in longitude and
+nothing else.  The user asked for "an actual map of both sectors", and the
+map is now drawn from **Natural Earth's 1:50m land outline**
+(`data/ne_50m_land.geojson`, committed to the repo, public domain), so the
+reader can see that the North Pacific sector is the one over the Bering Sea
+and Chukotka and that the North Atlantic sector is the one over the
+Greenland Sea, Iceland and northern Scandinavia.
+
+* the projection is the same azimuthal-equidistant polar projection the
+  schematic used: the pole at the centre, Greenwich at the bottom, so the
+  Pacific sector sits at the top of the map and the Atlantic sector at the
+  bottom - the same arrangement as the panels beside it;
+* the land is drawn as a **polygon collection** clipped to the 30N ring, and
+  the sector wedges are laid OVER it at 62% opacity, so the geography shows
+  through the sectors;
+* the longitudes of a coastline ring are **unwrapped** before the
+  projection, so a coast that crosses the antimeridian (Chukotka, the
+  Aleutians) is drawn the short way round the pole and not straight across
+  the middle of the map;
+* the labels carry a white halo, because they sit over land now.
+
+The map is drawn by `polar_cap.plot_domain_map()`, which reads the GeoJSON
+once and caches it; the file is in the repo so the figure never depends on a
+download at build time.
+
 ## The scripts
 - `polar_cap.py` - the zonal mean, the climatology, the normalisation and
   the drawing routine (shared by every route).

@@ -29,13 +29,13 @@ if missing:
 print("   the inputs are all present")
 PY
 
-# the section for every model that has a forecast series
+# the section for the three systems it is for: the seasonal run, the
+# sub-seasonal GEFS and the ECMWF extended range
 python3 plot_polar_cap.py ecmwf-seas5 "ECMWF SEAS5" || true
-for pair in "ukmo-gloseas6:UKMO GloSeas6" "meteo-france-s9:METFR System 9" \
-            "cmcc-sps4:CMCC SPS4" "dwd-gcfs2:DWD GCFS2.2" "eccc-cansips:ECCC canSIPS"; do
-  tag="${pair%%:*}"; label="${pair#*:}"
-  python3 plot_polar_cap.py "$tag" "$label" || true
-done
+python3 plot_polar_cap.py gefsv12 "NOAA GEFSv12 (35-day extended)" || true
+python3 plot_polar_sectors.py gefsv12 "NOAA GEFSv12 (35-day extended)" || true
+python3 plot_polar_cap.py ec46 "ECMWF EC46" || true
+python3 plot_polar_sectors.py ec46 "ECMWF EC46" || true
 
 python3 build_registry.py
 python3 build_site.py

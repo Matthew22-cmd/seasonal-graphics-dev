@@ -30,8 +30,8 @@ Two things about the catalogue, both measured from the live form schema
   * `leadtime_hour` takes 359 values, 98 of them ranges; the weekly ranges
     24_48 ... 456_480 are the ones the sub-seasonal windows are built from.
 
-**The licence is the blocker.**  The account has not accepted the S2S
-licence, so every request is refused with
+**The licence.**  The account has not accepted the S2S licence, so every
+request is refused with
 
     HTTP 403 {"title": "required licences not accepted",
               "detail": "Not all the required licences have been accepted;
@@ -39,11 +39,21 @@ licence, so every request is refused with
                          s2s-forecasts?tab=download#manage-licences ..."}
 
 The check runs before the request is validated, so a 403 always means the
-licence, never a malformed request.  The licence has to be ticked by hand in
-the web UI; there is no API for it (`/api/licences` and
-`/api/retrieve/v1/licences` both answer 404).  Until that is done this
-script reports the refusal and writes NOTHING: a chart must never be
-published without real data behind it.
+licence, never a malformed request.
+
+**The licence CAN be accepted by the API** (found in the R package
+CopernicusClimate, R/licenses.R):
+
+    GET  {store}/api/profiles/v1/account/licences          what is accepted
+    GET  {store}/api/catalogue/v1/vocabularies/licences    the catalogue
+    PUT  {store}/api/profiles/v1/account/licences/<id>      accept one
+         body: {"revision": N}                              (answers 201)
+
+The S2S licence is `s2s-licence`, revision 5.  The same key works on the CDS
+and on the ECDS; only the store's base URL differs.
+
+Until the licence is accepted this script reports the refusal and writes
+NOTHING: a chart must never be published without real data behind it.
 """
 import json
 import os
@@ -91,6 +101,60 @@ DELAY_HOURS = 48
 
 LICENCE_URL = ("https://ecds.ecmwf.int/datasets/s2s-forecasts"
                "?tab=download#manage-licences")
+
+# the S2S dataset's licence, and the revision of it that is current
+S2S_LICENCE = "s2s-licence"
+S2S_REVISION = 5
+
+
+# ------------------------------------------------------------------ licences
+def accepted_licences(s):
+    """-> the licences the account has accepted."""
+    r = s.get("%s/profiles/v1/account/licences" % ECDS, timeout=60)
+    if r.status_code != 200:
+        return []
+    try:
+        d = r.json()
+    except Exception:
+        return []
+    if isinstance(d, dict):
+        d = d.get("results") or d.get("licences") or []
+    return d or []
+
+
+def accept_licence(s, licence_id, revision):
+    """Accept one licence.  -> True when the store took it."""
+    r = s.put("%s/profiles/v1/account/licences/%s" % (ECDS, licence_id),
+              json={"revision": revision}, timeout=60)
+    # the Data Store answers 201 Created for a new acceptance
+    return r.status_code in (200, 201, 204)
+
+
+def ensure_licence(s):
+    """Accept the S2S licence if the account has not taken it yet.
+
+    The tick in the web UI is a PUT against the account's licence list, and
+    the same key works here, so the EC46 does not have to wait for a manual
+    click.
+    """
+    have = accepted_licences(s)
+    ids = []
+    for x in have:
+        if isinstance(x, dict):
+            ids.append(str(x.get("id") or x.get("licence") or ""))
+        else:
+            ids.append(str(x))
+    if S2S_LICENCE in ids:
+        print("   the licence %s is already accepted" % S2S_LICENCE,
+              flush=True)
+        return True
+    print("   the licence %s is not accepted - accepting it now" % S2S_LICENCE,
+          flush=True)
+    ok = accept_licence(s, S2S_LICENCE, S2S_REVISION)
+    print("   the licence %s: %s" % (S2S_LICENCE,
+                                      "accepted" if ok else "REFUSED"),
+          flush=True)
+    return ok
 
 
 def key():
@@ -255,6 +319,13 @@ def download(s, jid, path):
 
 def main():
     s = session()
+    # the licence first: a request that is refused for want of it says
+    # nothing about the data, and the acceptance is an API call
+    if not ensure_licence(s):
+        print("   the S2S licence has not been accepted, so nothing can be "
+              "asked of the archive.")
+        print("   it is one tick in the web UI: %s" % LICENCE_URL)
+        return
     run_date, run_time, _ = latest_run(s)
     if run_date is None:
         print("   no ECMWF S4S run found in the last week")
