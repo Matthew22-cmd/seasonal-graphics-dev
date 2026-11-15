@@ -689,7 +689,19 @@ Measured, 10 hPa, polar-cap mean, the model's own climate against the CORe
 
 | lead month | Nov | Dec | Jan | Feb | Mar | Apr | May | Jun |
 |---|---|---|---|---|---|---|---|---|
-| the model's bias (m2/s2) | -641 | -809 | -311 | -1,627 | -1,654 | -2,908 | ~-5,300 | ~-4,941 |
+| the model's bias (m2/s2) | -641 | -809 | -311 | -1,627 | -1,654 | -2,909 | -3,168 | -4,745 |
+
+What the re-basing does to the 10 hPa cap, the model minus the observed
+climate before and after:
+
+| the day | before | after |
+|---|---|---|
+| 2026-11-02 (the first forecast day) | +3.43 sigma | +4.04 sigma |
+| 2026-12-15 | -0.90 | -0.68 |
+| 2027-02-15 | +0.33 | +0.69 |
+| 2027-04-15 | -0.93 | +0.16 |
+| 2027-05-15 | **-2.89** | **+0.43** |
+| 2027-06-01 | **-3.75** | **+0.31** |
 
 And the observed climate's own sigma at 10 hPa falls to **429 m2/s2 in
 June** (631 on the day), so an offset of 5,000 was amplified to several
@@ -722,6 +734,37 @@ Where the model's own climate comes from:
   the SPV chart's month-7 climate was built (`fetch_polar_model_clim7.py`,
   ten inits 2016-2025).  The past inits' **lead 6 (April)** is the check on
   the pull: the same season and the same lead as the monthly product's.
+  It agrees: the monthly product says 299,082.5 and the ten past runs say
+  **299,317.2** - a difference of 235 m2/s2 between two independent routes.
+
+### The month's MEAN, not one day of it
+
+The first version of the pull kept ONE day per lead month, and the monthly
+product publishes a month's mean.  They are not the same number: the polar
+cap warms by about 4,700 m2/s2 between the 5th and the 29th of April, so
+the single day said 296,625.6 where the month says 299,082.5.  The days of
+a lead month are averaged now (`redecode_polar_model_clim7.py` re-decoded
+the finished inits from the jobs still in the store - the GRIBs are deleted
+after decoding, but the job results are not).
+
+The model's mean state turns out to be nearly the same every year: over
+ten November inits the April lead month has a spread of 340 m2/s2 and the
+June lead month 180, so ten inits is far more than enough.
+
+### June is anchored on the FIRST of the month, not the middle
+
+The daily product stops at 215 days from the init, which is the 3rd of
+June, so the model's own climate for lead month 8 is the mean of 1 and
+3 June and it stands for those days.  The observed climate is anchored at
+the middle of every month, so the two curves cannot be anchored the same
+way - and the correction has to be the difference of the two CURVES, not
+the difference of the two monthly means.
+
+Anchoring June in the middle drew the last three days of the chart as
++2 sigma at 10 hPa (the model's value belongs to the start of the month,
+and the interpolation ran it up towards the middle).  Anchored on the 1st
+of June and held flat afterwards, the last three days read +0.31, +0.67 and
++1.05 sigma - which is what the model actually says.
 * **October**, the month before the chart's first day - the observed climate
   is interpolated onto the days from the monthly means, and the first half
   of November leans on the October mean, so the model needs an October
