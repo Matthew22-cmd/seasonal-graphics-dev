@@ -780,9 +780,9 @@ def plot_domain_map(ax):
     # the legend
     handles = [
         mpatches.Patch(facecolor="#f4b740", edgecolor="none", alpha=0.62,
-                       label="North Pacific (120°E-240°E)"),
+                       label="North Pacific (60N-90°N)"),
         mpatches.Patch(facecolor="#3d7fd1", edgecolor="none", alpha=0.62,
-                       label="North Atlantic (300°E-60°E)"),
+                       label="North Atlantic (60N-90°N)"),
         mpatches.Patch(facecolor="#d9d3c6", edgecolor="#b3aa9a",
                        label="land"),
     ]
@@ -997,11 +997,11 @@ def plot_sector_sections(times, sectors, levels, out_path, title, subtitle,
 
         # the panel's own name, above it.  It is CENTRED over its panel:
         # left-aligned, the three names ran into each other, and the map's
-        # own heading ran into the third one.
+        # own heading ran into the third one.  The sectors are named by
+        # their LATITUDE range (60N-90N) - that is what the section is
+        # about, and the longitudes are on the map.
         fig.text(left0 + i * (width + gap) + width / 2.0, 0.822,
-                 "%s (%.0f°E-%.0f°E)" % (SECTOR_LABELS.get(name, name),
-                                         SECTORS[name][0],
-                                         SECTORS[name][1]),
+                 "%s (60N-90°N)" % SECTOR_LABELS.get(name, name),
                  fontsize=10.0, fontweight="bold", color=C_TEXT,
                  ha="center", va="bottom")
 
