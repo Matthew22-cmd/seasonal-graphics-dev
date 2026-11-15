@@ -158,9 +158,20 @@ def ensure_licence(s):
 
 
 def key():
-    with open(os.path.join(HERE, ".cdsapirc")) as f:
-        return [l.split(":", 1)[1].strip() for l in f
-                if l.strip().startswith("key:")][0]
+    """-> the CDS/ECDS key, from .cdsapirc (mode 600, never in the repo)."""
+    p = os.path.join(HERE, ".cdsapirc")
+    if not os.path.exists(p):
+        raise SystemExit(
+            "   there is no .cdsapirc here, so there is no key to ask the\n"
+            "   store with.  Put it in place with:\n"
+            "       ./set_cds_key.sh <your CDS API key>\n"
+            "   (the same key works on the CDS and on the ECDS, where the\n"
+            "    EC46 comes from.)")
+    with open(p) as f:
+        for l in f:
+            if l.strip().startswith("key:"):
+                return l.split(":", 1)[1].strip()
+    raise SystemExit("   the .cdsapirc here has no key: line")
 
 
 def session():
