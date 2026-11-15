@@ -35,7 +35,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(HERE, "data")
 sys.path.insert(0, HERE)
 
-from polar_cap import LEVELS, read_grib_levels  # noqa: E402
+from polar_cap import LEVELS, SECTORS, read_grib_levels_sectors  # noqa: E402
 
 STATE = os.path.join(DATA, "polar_model_jobs.json")
 OUT = os.path.join(DATA, "polar_model_z.json")
@@ -76,7 +76,11 @@ def load_state():
 
 
 def save_state(st):
-    tmp = STATE + ".tmp"
+    # The temp file carries the process id: two fetchers writing the same
+    # state file at once raced on ONE temp name, and the loser's replace
+    # found nothing to move (FileNotFoundError) and took the whole run
+    # down with it.
+    tmp = "%s.%d.tmp" % (STATE, os.getpid())
     json.dump(st, open(tmp, "w"), indent=1)
     os.replace(tmp, STATE)
 
@@ -88,7 +92,7 @@ def load_out():
 
 
 def save_out(o):
-    tmp = OUT + ".tmp"
+    tmp = "%s.%d.tmp" % (OUT, os.getpid())
     json.dump(o, open(tmp, "w"))
     os.replace(tmp, OUT)
 
@@ -221,13 +225,51 @@ def main():
         times = rec.get("times") or []
         if not times:
             return set()
+        # A record that carries no sector means has to be fetched again:
+        # the by-sector charts need them, and they come out of the same
+        # file, so there is nothing to ask for a second time.
+        if "--resectors" in sys.argv and set(rec.get("sectors") or {}) != set(SECTORS):
+            print("   the %s: the record carries %d sector(s) and %d are "
+                  "wanted - the chunks are fetched again"
+                  % (tag, len(rec.get("sectors") or {}), len(SECTORS)), flush=True)
+            return set()
         # the chunk's day range, from the first and the last time it holds
         covered = set()
+        # A chunk is only really covered if its SECTOR means are there too:
+        # the times come from the record, but the sectors are a separate
+        # set of rows, and a record with the times and empty sectors is a
+        # half-built one.
+        secs = rec.get("sectors") or {}
+        sec_ok = None
+        for name in SECTORS:
+            rows = secs.get(name) or []
+            if len(rows) != len(times):
+                sec_ok = False
+                break
+            sec_ok = True
         for c0, c1 in chunk_list(RUN_DAYS.get(tag, 215)):
             lo = _day_of(c0)
             hi = _day_of(c1 - 1)
-            if any(lo <= str(t)[:10] <= hi for t in times):
-                covered.add(c0)
+            idx = [i for i, t in enumerate(times) if lo <= str(t)[:10] <= hi]
+            if not idx:
+                continue
+            if sec_ok is False:
+                continue
+            # EVERY sector must have its means for those days: with only
+            # one of them present the chunk is half built, and counting it
+            # as covered left the last sector with three days of data for
+            # the whole run.
+            if sec_ok:
+                ok = True
+                for name in SECTORS:
+                    rows = secs.get(name) or []
+                    if not all(any(x is not None for x in rows[i])
+                               for i in idx if i < len(rows)):
+                        ok = False
+                        break
+                if not ok:
+                    continue
+            covered.add(c0)
         missing = have - covered
         if missing:
             print("   the %s: %d chunk(s) are marked decoded but the values "
@@ -236,6 +278,23 @@ def main():
         return covered
 
     def live():
+        """The jobs the STORE has for this account, not just ours.
+
+        The queue's admission gate is the store's, and it counts every job
+        the account holds - including the ones that were rejected and are
+        still being released.  Counting only our own state file said "the
+        queue is empty" while the store was turning every submission away
+        with "Maximum number queued requests for this dataset has been
+        reached".
+        """
+        try:
+            r = cds._request("GET", "/retrieve/v1/jobs?limit=30")
+            if r.status_code == 200:
+                return [j for j in (r.json().get("jobs") or [])
+                        if j.get("status") in ("accepted", "running",
+                                               "queued", "executing")]
+        except Exception:                            # noqa: BLE001
+            pass
         return [j for j in st["jobs"]
                 if j.get("status") in ("accepted", "running", "queued")]
 
@@ -253,7 +312,8 @@ def main():
             # a job with no status (or one that is not yet finished) is
             # asked again: the harvest must not skip a job that the
             # archive has in fact completed
-            if j.get("status") in ("decoded", "short", "failed", "superseded"):
+            if j.get("status") in ("decoded", "short", "failed", "superseded",
+                                   "retry"):
                 continue
             status = cds.job_status(j["job"])
             j["status"] = status
@@ -262,7 +322,13 @@ def main():
                                         % (j["tag"], j["chunk"]))
                     cds.download_job(j["job"], path)
                     nmem = members_in(path)
-                    times, vals = read_grib_levels(path)
+                    # The C3S `geopotential` parameter is the GEOPOTENTIAL
+                    # (m2/s2), not the height in metres, so no conversion
+                    # is needed here - the reader's values are already on
+                    # the same scale as the reanalysis and the climate.
+                    # (The S2S archive's geopotential_height IS in metres,
+                    # which is why the EC46 fetcher multiplies by G0.)
+                    times, vals, svals = read_grib_levels_sectors(path)
                     os.remove(path)
                     if nmem < MIN_MEMBERS:
                         print("   the %s chunk %d carries only %d members - "
@@ -272,6 +338,9 @@ def main():
                     rec = out.setdefault(j["tag"], {"times": [], "values": [],
                                                     "members": nmem,
                                                     "levels": list(LEVELS)})
+                    # an older record may carry no sector key at all
+                    if "sectors" not in rec:
+                        rec["sectors"] = {n: [] for n in SECTORS}
                     # the chunks overlap, so a time that is already in the
                     # record is replaced rather than appended: otherwise the
                     # same day is counted three times
@@ -280,16 +349,37 @@ def main():
                         row = [v.get(l) for l in LEVELS]
                         if not all(x is not None for x in row):
                             continue
+                        # the sector means come with the cap mean: the
+                        # by-sector charts need them, and they are free -
+                        # the file is already being read.
+                        srow = {}
+                        for name, sv in (svals.get(t) or {}).items():
+                            srowv = [sv.get(l) for l in LEVELS]
+                            if all(x is not None for x in srowv):
+                                srow[name] = srowv
                         if t in have:
                             rec["values"][have[t]] = row
                         else:
                             have[t] = len(rec["times"])
                             rec["times"].append(t)
                             rec["values"].append(row)
+                        # the sector rows are kept ALIGNED with the times:
+                        # a time whose sector means are missing keeps a NaN
+                        # row, so the two never drift apart
+                        for name in SECTORS:
+                            sl = rec["sectors"].setdefault(name, [])
+                            while len(sl) <= have[t]:
+                                sl.append([None] * len(LEVELS))
+                            sl[have[t]] = srow.get(name) or [None] * len(LEVELS)
                     order = sorted(range(len(rec["times"])),
                                    key=lambda i: rec["times"][i])
                     rec["times"] = [rec["times"][i] for i in order]
                     rec["values"] = [rec["values"][i] for i in order]
+                    for name in list(rec.get("sectors") or {}):
+                        sl = rec["sectors"][name]
+                        rec["sectors"][name] = [
+                            sl[i] if i < len(sl) else [None] * len(LEVELS)
+                            for i in order]
                     rec["members"] = max(rec.get("members", 0), nmem)
                     save_out(out)
                     j["status"] = "decoded"
@@ -340,6 +430,9 @@ def main():
             pending = {j["chunk"] for j in st["jobs"]
                        if j.get("tag") == tag
                        and j.get("status") in ("accepted", "running", "queued")}
+            # A chunk that failed once is skipped, so a permanent failure
+            # does not cost a queue slot on every run.  A chunk marked
+            # 'retry' is asked for again.
             failed = {j["chunk"] for j in st["jobs"]
                       if j.get("tag") == tag and j.get("status") in ("short", "failed")}
             for c0, c1 in chunk_list(RUN_DAYS.get(tag, 215)):

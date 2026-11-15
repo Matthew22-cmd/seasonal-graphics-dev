@@ -337,8 +337,11 @@ def find_cycle():
 def cycle_is_complete(date, hour):
     """Does this cycle carry the whole range with the whole ensemble?
 
-    The check is on the LONGEST lead: a cycle that is still being uploaded
-    has few members there, and its 35-day range is not there at all.
+    The check is on EVERY lead, not just the longest: a cycle that is
+    still being uploaded has the whole ensemble at its first leads and only
+    a handful further out, and the check that looked only at the longest
+    lead and at the member COUNT accepted it - so the chart was drawn from
+    a cycle whose second half had only eight members in it.
     """
     global DATE, HOUR
     old = (DATE, HOUR)
@@ -349,11 +352,24 @@ def cycle_is_complete(date, hour):
             d = by_lead.get(part) or {}
             if not d:
                 return False
+            if len(d) < 31:
+                return False
             longest = max(max(v) for v in d.values())
             if longest < MAX_LEAD_H:
                 return False
-            if len(d) < 31:
-                return False
+            # every lead of the range must carry the WHOLE ensemble
+            counts = {}
+            for m, leads in d.items():
+                for lf in leads:
+                    counts.setdefault(lf, 0)
+                    counts[lf] += 1
+            for lf in range(12, MAX_LEAD_H + 1, 24):
+                if counts.get(lf, 0) < 31:
+                    print("   the cycle %s %sZ is incomplete: the lead f%03d "
+                          "carries %d members" % (date, hour, lf,
+                                                  counts.get(lf, 0)),
+                          flush=True)
+                    return False
         return True
     except Exception:                                # noqa: BLE001
         return False
@@ -621,6 +637,16 @@ def main():
               "that is a truncated listing, not the archive" % counts, flush=True)
 
     st = json.load(open(STATE)) if os.path.exists(STATE) else {"leads": {}}
+    # A state file from ANOTHER cycle holds that cycle's leads, and reusing
+    # them would put a different run's data on the chart.  The cycle that
+    # is wanted is the newest one that carries the whole range with the
+    # whole ensemble, and when the newest complete cycle is not the one in
+    # the state file the state is cleared.
+    if st.get("date") and (st["date"], st.get("hour")) != (date, hour):
+        print("   the state file holds the cycle %s %sZ and the cycle wanted "
+              "is %s %sZ - the state is cleared"
+              % (st["date"], st.get("hour"), date, hour), flush=True)
+        st = {"leads": {}}
     st["date"], st["hour"] = date, hour
     out = {}
 
