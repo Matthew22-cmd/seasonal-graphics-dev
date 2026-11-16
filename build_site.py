@@ -258,16 +258,15 @@ def header(active):
 def footer():
     """The data line and the handle, at the foot of every page.
 
-    The stamp is the date the site was last rebuilt, so a reader can see
-    how fresh the pages are.  It is the BUILD date, not a data date - the
-    init each model is on is on its own card.
+    The stamp is the date the figures were built, so a reader can see how
+    fresh the pages are.  The init each model is on is on its own card.
     """
     stamp = ""
     if VER:
         try:
             import datetime
             d = datetime.datetime.strptime(VER[:14], "%Y%m%d%H%M%S")
-            stamp = (" &middot; the site was last rebuilt on %d %s %d"
+            stamp = (" &middot; the figures are from the %d %s %d build"
                      % (d.day, MONTHS[d.month - 1], d.year))
         except Exception:
             pass

@@ -99,6 +99,10 @@ fi
 # the build, for THIS target
 # ----------------------------------------------------------------------
 echo ">> building the site for this target"
+# The registry carries the version string that busts the browser's cache on
+# every asset URL, so it is rebuilt first: a re-rendered figure then gets a
+# new URL instead of being served from the cache.
+python3 -u build_registry.py | sed 's/^/   /'
 python3 -u build_site.py | sed 's/^/   /'
 
 if [ -z "$(git status --porcelain)" ]; then
