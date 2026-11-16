@@ -29,7 +29,7 @@ sys.path.insert(0, HERE)
 import polar_rebase  # noqa: E402
 from polar_cap import (G0, SECTOR_LABELS, daily_climate,  # noqa: E402
                        fit_subtitle, load_clim_native, plot_sector_sections)
-from ecmwf_credit import credit_for  # noqa: E402
+from ecmwf_credit import credit_for_polar  # noqa: E402
 
 OUT = os.path.join(HERE, "output", "polar_cap")
 MODEL_CACHE = os.path.join(DATA, "polar_model_z.json")
@@ -256,7 +256,7 @@ def main(tag="gefsv12", label="NOAA GEFSv12", short=None, rebase="forecast"):
     path = os.path.join(OUT, "polar_sectors_%s.png" % tag)
     plot_sector_sections(days, anom, levels, path, label_txt, subtitle,
                          split=len(ana_days) if ana_days else None,
-                         credit=credit_for(tag))
+                         credit=credit_for_polar(tag))
     print("   the figure: %s" % path)
     return path
 

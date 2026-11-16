@@ -26,7 +26,7 @@ import polar_rebase  # noqa: E402
 from polar_cap import (CAP_N, CAP_S, G0, LEVELS, build_climatology,  # noqa: E402
                        daily_climate, fit_subtitle, load_clim_native,
                        load_climatology, normalise, plot_section)
-from ecmwf_credit import credit_for  # noqa: E402
+from ecmwf_credit import credit_for_polar  # noqa: E402
 
 OUT = os.path.join(HERE, "output", "polar_cap")
 PROFILES = os.path.join(DATA, "era5_polarcap_profiles.npz")
@@ -446,7 +446,7 @@ def main(tag="ecmwf-seas5", label="ECMWF SEAS5", short=None,
     p = os.path.join(OUT, "polar_cap_%s.png" % tag)
     plot_section(days, norm, levs, p, title, subtitle,
                  split=split if split else None,
-                 credit=credit_for(tag),
+                 credit=credit_for_polar(tag),
                  analysis_label=("%s reanalysis" % ana_name) if ana_days else None,
                  forecast_label="%s %s forecast" % (
                      short, "sub-seasonal" if sub_seasonal else "seasonal"),

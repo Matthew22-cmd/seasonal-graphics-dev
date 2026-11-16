@@ -3,8 +3,14 @@
 #
 #   ./push_to_github.sh              -> the DEVELOPMENT site (the default)
 #   ./push_to_github.sh --dev        -> the DEVELOPMENT site
-#   ./push_to_github.sh --prod       -> the OPERATIONAL site
+#   ./push_to_github.sh --prod --approved
+#                                   -> the OPERATIONAL site, and ONLY with the
+#                                      explicit approval flag
 #   ./push_to_github.sh --dev <token>
+#
+# NOTHING reaches the operational site without --approved.  The development
+# site is where work happens; the operational site is a publication step
+# that has to be asked for.
 #
 # There are TWO sites, and they are two repositories:
 #
@@ -33,11 +39,13 @@ set -euo pipefail
 # the target
 # ----------------------------------------------------------------------
 TARGET="dev"
+APPROVED=0
 ARGS=()
 for a in "$@"; do
   case "$a" in
     --dev)        TARGET="dev" ;;
     --prod|--operational|--live) TARGET="prod" ;;
+    --approved)   APPROVED=1 ;;
     *)            ARGS+=("$a") ;;
   esac
 done
@@ -47,6 +55,15 @@ cd "$HERE"
 export HOME="${HOME:-/workspace/.home}"
 export PYTHONPATH="${PYTHONPATH:-/workspace/.home/.local/lib/python3.11/site-packages}"
 
+if [ "$TARGET" = "prod" ] && [ "$APPROVED" != "1" ]; then
+  echo "REFUSING to publish to the operational site without approval." >&2
+  echo "  The operational site is a publication step that has to be asked" >&2
+  echo "  for: ./push_to_github.sh --prod --approved" >&2
+  echo "  (everything else goes to the development site.)" >&2
+  exit 2
+fi
+
+DEV_REPO_NAME="seasonal-graphics-dev"
 if [ "$TARGET" = "prod" ]; then
   REPO="seasonal-graphics"
   OWNER="${GITHUB_OWNER:-massachusettswx-weather}"
@@ -55,7 +72,7 @@ if [ "$TARGET" = "prod" ]; then
   SITE_DEV=0
   echo ">> target: the OPERATIONAL site (${SITE_URL})"
 else
-  REPO="seasonal-graphics-dev"
+  REPO="$DEV_REPO_NAME"
   OWNER="${GITHUB_DEV_OWNER:-Matthew22-cmd}"
   SITE_URL="https://matthew22-cmd.github.io/seasonal-graphics-dev/"
   SITE_REPO_URL="https://github.com/Matthew22-cmd/seasonal-graphics-dev"
@@ -140,15 +157,18 @@ echo ">> pushing"
 # The token is only ever in the remote URL while the push is running.  If the
 # push fails - a revoked token, for instance - the remote must not be left
 # holding a dead credential, so the clean URL is restored on the way out.
-CLEAN_REMOTE="https://github.com/${OWNER}/${REPO}.git"
+# The remote is ALWAYS left pointing at the DEVELOPMENT repository, even
+# after an --prod publish: a bare `git push` must never be able to reach the
+# operational site.
+DEV_REMOTE="https://github.com/${GITHUB_DEV_OWNER:-Matthew22-cmd}/${DEV_REPO_NAME}.git"
 cleanup_remote () {
-    git remote set-url origin "$CLEAN_REMOTE" 2>/dev/null || true
+    git remote set-url origin "$DEV_REMOTE" 2>/dev/null || true
 }
 trap cleanup_remote EXIT
 git remote remove origin 2>/dev/null || true
 git remote add origin "https://${TOKEN}@github.com/${OWNER}/${REPO}.git"
 git push -u origin main
-git remote set-url origin "$CLEAN_REMOTE"
+git remote set-url origin "$DEV_REMOTE"
 
 echo
 echo "Pushed to https://github.com/${OWNER}/${REPO}"

@@ -256,12 +256,28 @@ def header(active):
 
 
 def footer():
+    """The data line and the handle, at the foot of every page.
+
+    The stamp is the date the site was last rebuilt, so a reader can see
+    how fresh the pages are.  It is the BUILD date, not a data date - the
+    init each model is on is on its own card.
+    """
+    stamp = ""
+    if VER:
+        try:
+            import datetime
+            d = datetime.datetime.strptime(VER[:14], "%Y%m%d%H%M%S")
+            stamp = (" &middot; the site was last rebuilt on %d %s %d"
+                     % (d.day, MONTHS[d.month - 1], d.year))
+        except Exception:
+            pass
     return """<footer>
   <span>Data: Copernicus CDS (ECMWF SEAS5 and C3S seasonal systems) &middot;
-        ERA5 reanalysis &middot; ERA5 climatology 1991&ndash;2020 &middot;
-        ECMWF open data</span>
+        ERA5 reanalysis and climatology 1991&ndash;2020 &middot;
+        NOAA CORe reanalysis (the polar cap section) &middot;
+        ECMWF open data%s</span>
   <span><strong>@Massachusettswx</strong></span>
-</footer>"""
+</footer>""" % stamp
 
 
 VER = ""
@@ -307,8 +323,9 @@ def page(title, active, body, version=""):
 <div class="wrap">
 %s
 </div>
+%s
 </body>
-</html>""" % (title, DEV_TAG, canonical, v, header(active), body)
+</html>""" % (title, DEV_TAG, canonical, v, header(active), body, footer())
 
 
 # --------------------------------------------------------------------------
@@ -391,7 +408,11 @@ def build_home(reg):
   surface temperature plumes for the four ENSO regions, and the 10 hPa
   zonal-mean zonal
   wind (the stratospheric polar vortex proxy) against the ERA5
-  1991&ndash;2020 climatology.</p>
+  1991&ndash;2020 climatology.
+  The <a href="__SITE__spv.html#polar">polar cap section</a> is the same stratosphere
+  from the other side: the 60&ndash;90&deg;N geopotential height anomaly as a
+  time-height picture, in front of NOAA&rsquo;s CORe reanalysis, for the ECMWF
+  SEAS5 and for NOAA&rsquo;s GEFSv12.</p>
 </div>
 <div class="grid c3">%s</div>
 <div class="card">
