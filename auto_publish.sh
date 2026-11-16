@@ -120,8 +120,8 @@ while true; do
                 fi
             fi
             python3 -u verify_site.py >> logs_auto_publish.log 2>&1
-            rm -f /workspace/seasonal-snow-site.zip
-            ( cd docs && zip -qr /workspace/seasonal-snow-site.zip . )
+            rm -f /workspace/seasonal-graphics-site.zip
+            ( cd docs && zip -qr /workspace/seasonal-graphics-site.zip . )
         fi
         prev="$cur"
         echo "$cur" > "$FPFILE"

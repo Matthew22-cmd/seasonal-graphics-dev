@@ -230,7 +230,7 @@ def set_init_sub(reg):
 
 def header(active):
     # The tabs are ABSOLUTE links: a relative "index.html" made the browser
-    # show ".../seasonal-snow/index.html" when the reader hovered the Home
+    # show ".../seasonal-graphics/index.html" when the reader hovered the Home
     # tab, and the home page is the default entry point.
     tabs = [("index.html", "Home"),
             ("model.html", "Model"),
@@ -249,7 +249,7 @@ def header(active):
   <h1><a href="%s">Seasonal Forecast Graphics</a></h1>
   <span class="sub">%s</span>
   <span class="spacer"></span>
-  <a href="https://github.com/massachusettswx-weather/seasonal-snow" target="_blank"
+  <a href="https://github.com/massachusettswx-weather/seasonal-graphics" target="_blank"
      rel="noopener">GitHub</a>
 </header>
 <nav class="tabs">%s</nav>""" % (SITE_URL, INIT_SUB, links)
@@ -269,7 +269,7 @@ VER = ""
 # The site's own address.  The home page is the default entry point, so the
 # canonical URL of the home page is the bare directory and never the
 # "/index.html" form.
-SITE_URL = "https://massachusettswx-weather.github.io/seasonal-snow/"
+SITE_URL = "https://massachusettswx-weather.github.io/seasonal-graphics/"
 
 
 def page(title, active, body, version=""):

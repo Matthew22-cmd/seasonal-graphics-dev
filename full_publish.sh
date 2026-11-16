@@ -26,6 +26,6 @@ echo ">> the site"
 echo ">> verifying"
 python3 -u verify_site.py
 
-rm -f /workspace/seasonal-snow-site.zip
-( cd docs && zip -qr /workspace/seasonal-snow-site.zip . )
+rm -f /workspace/seasonal-graphics-site.zip
+( cd docs && zip -qr /workspace/seasonal-graphics-site.zip . )
 echo ">> done"

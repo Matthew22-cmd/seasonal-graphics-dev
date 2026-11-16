@@ -110,6 +110,6 @@ fi
 
 # 9. verify the live site and repackage the bundle
 python3 verify_site.py || log "verify_site reported problems"
-rm -f /workspace/seasonal-snow-site.zip
-( cd docs && zip -qr /workspace/seasonal-snow-site.zip . )
-log "done - bundle at /workspace/seasonal-snow-site.zip"
+rm -f /workspace/seasonal-graphics-site.zip
+( cd docs && zip -qr /workspace/seasonal-graphics-site.zip . )
+log "done - bundle at /workspace/seasonal-graphics-site.zip"

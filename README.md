@@ -1,6 +1,6 @@
 # Seasonal forecast graphics
 
-**[Seasonal Forecast Graphics](https://massachusettswx-weather.github.io/seasonal-snow/)**
+**[Seasonal Forecast Graphics](https://massachusettswx-weather.github.io/seasonal-graphics/)**
 — the live site. That address is the site's home page and the default entry
 point; the `/index.html` form is the same page but is not the address to
 publish.
@@ -182,7 +182,7 @@ lead *k* really is calendar month *k*.
 ./push_to_github.sh <github_token> [repo_name]
 ```
 
-Creates `massachusettswx-weather/seasonal-snow`, pushes `main`, enables Pages
+Creates `massachusettswx-weather/seasonal-graphics`, pushes `main`, enables Pages
 (source: main /docs) and prints the live URL. See `GITHUB_TOKEN.md` for how
 to mint the token.
 

@@ -25,7 +25,7 @@ else
     exit 1
 fi
 [ -n "$TOKEN" ] || { echo "no token" >&2; exit 1; }
-REPO="${2:-seasonal-snow}"
+REPO="${2:-seasonal-graphics}"
 OWNER="${GITHUB_OWNER:-massachusettswx-weather}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 cd "$HERE"
