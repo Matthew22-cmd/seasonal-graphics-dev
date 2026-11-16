@@ -972,7 +972,14 @@ def main():
     build_snow(reg)
     build_enso(reg)
     build_spv(reg)
-    build_login_page()
+    if SITE_DEV:
+        build_login_page()
+    else:
+        # the operational site has no gate - make sure no login page is
+        # left over from a development build
+        lp = os.path.join(SITE, "login.html")
+        if os.path.exists(lp):
+            os.remove(lp)
     write_readme()
     print("site built:", SITE)
     if SITE_DEV:

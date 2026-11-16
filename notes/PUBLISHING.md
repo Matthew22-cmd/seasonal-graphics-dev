@@ -87,3 +87,29 @@ convention:
 
 Everything that is not the operational site is fair game on the
 development copy - that is what it is for.
+
+## The development copy is behind a password (16 Nov 2026)
+
+The user asked for the development site to be private.  **GitHub Pages does
+not exist for a private repository on a free plan** - making the repository
+private removes the Pages site entirely (the site 404s and the `pages`
+object disappears; `has_pages` goes false).  Re-enabling Pages on a public
+repository restores it, so the development repository has to stay public and
+the privacy is provided by a gate in front of the pages:
+
+* `build_site.py` writes `login.html` for the development build and injects a
+  blocking script into the `<head>` of every page.  Without the token the
+  visitor is redirected to the login page before anything is drawn.
+* the password is read from `data/.dev_gate_password` (gitignored) or from
+  `$DEV_GATE_PASSWORD`; only its **SHA-256 hash** reaches the published
+  files, so the password itself is never published.
+* `push_to_github.sh` refuses to publish the development copy without a
+  password.
+* the operational site is **never** gated - the build only writes the login
+  page when `SITE_DEV=1`, and it removes a stale one otherwise.
+
+The gate is a client-side check, so it stops a reader, not a determined
+scraper: the chart PNGs are still reachable by their direct URL and the
+repository's contents are public.  For true repository-level privacy the
+account needs GitHub Pro (private repositories get Pages), or the site has
+to be served from the owner's own server behind basic auth.
