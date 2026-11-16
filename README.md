@@ -1,8 +1,9 @@
 # Seasonal forecast graphics
 
-**Live site: [massachusettswx-weather.github.io/seasonal-snow/](https://massachusettswx-weather.github.io/seasonal-snow/)**
-— that URL is the site's home page and the default entry point; the
-`/index.html` form is the same page but is not the address to publish.
+**[Seasonal Forecast Graphics](https://massachusettswx-weather.github.io/seasonal-snow/)**
+— the live site. That address is the site's home page and the default entry
+point; the `/index.html` form is the same page but is not the address to
+publish.
 
 Snowfall and 10 hPa zonal-mean zonal wind (SPV) panels from the ECMWF SEAS5
 and the C3S seasonal prediction systems, for the November 2026 / October 2026
