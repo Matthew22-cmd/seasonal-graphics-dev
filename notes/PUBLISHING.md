@@ -67,3 +67,23 @@ by hand.  If the development copy is wanted under the main account, create
 `massachusettswx-weather/seasonal-graphics-dev` by hand, add the token
 account as a collaborator, and point the script at it with
 `GITHUB_DEV_OWNER=massachusettswx-weather`.
+
+## The approval gate (16 Nov 2026)
+
+The user: *"DO NOT PUT ANYTHING NOT APPROVED ON THE SITE W/O MY APPROVAL."*
+
+So the operational site is gated in the script itself, not only by
+convention:
+
+* `--prod` **refuses to run** without the extra `--approved` flag.  It exits
+  with code 2 and touches nothing - no build, no commit, no push.
+* the git remote is **always** left pointing at the development
+  repository, even after an `--prod` publish, so a bare `git push` can
+  never reach the live site.
+* the publish flow **rebuilds the registry first**: the registry carries
+  the version string that busts the browser's cache on every asset URL,
+  so a re-rendered figure gets a new URL instead of being served from the
+  cache.
+
+Everything that is not the operational site is fair game on the
+development copy - that is what it is for.
