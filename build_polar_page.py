@@ -102,7 +102,7 @@ def polar_block(reg=None):
                   % (i["id"], " selected" if i["id"] == default else "",
                      i["name"]) for i in its)
     block = """<div class="card" id="polar">
-  <div class="crumb"><a href="index.html">&larr; All models</a> &middot;
+  <div class="crumb"><a href="__SITE__">&larr; All models</a> &middot;
     <a href="model.html">Choose a variable</a></div>
   <h2 class="sec">Polar Cap (60&ndash;90&deg;N) Geopotential Height Anomaly</h2>
   <p class="lead">A time-height section of the polar cap: the area-weighted

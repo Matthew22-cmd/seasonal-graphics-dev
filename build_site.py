@@ -229,13 +229,18 @@ def set_init_sub(reg):
 
 
 def header(active):
+    # The tabs are ABSOLUTE links: a relative "index.html" made the browser
+    # show ".../seasonal-snow/index.html" when the reader hovered the Home
+    # tab, and the home page is the default entry point.
     tabs = [("index.html", "Home"),
             ("model.html", "Model"),
             ("snow.html", "Snowfall"),
             ("spv.html", "Stratosphere"),
             ("enso.html", "ENSO")]
     links = "".join(
-        '<a href="%s"%s>%s</a>' % (h, ' class="active"' if h == active else "", t)
+        '<a href="%s"%s>%s</a>'
+        % (SITE_URL if h == "index.html" else SITE_URL + h,
+           ' class="active"' if h == active else "", t)
         for h, t in tabs)
     # The site's own name is a link to its HOME PAGE - the bare directory,
     # not the "/index.html" form - so every page carries a real link to the
@@ -269,6 +274,8 @@ SITE_URL = "https://massachusettswx-weather.github.io/seasonal-snow/"
 
 def page(title, active, body, version=""):
     v = ("?v=%s" % version) if version else ""
+    # the crumb back to the home page is an absolute link
+    body = body.replace("__SITE__", SITE_URL)
     canonical = SITE_URL if active == "index.html" else SITE_URL + active
     return """<!doctype html>
 <html lang="en">
@@ -385,7 +392,7 @@ def build_home(reg):
 def build_model_page(reg):
     """Step 2: choose a variable for the chosen model."""
     body = """<div class="card">
-  <div class="crumb"><a href="index.html">&larr; All models</a></div>
+  <div class="crumb"><a href="__SITE__">&larr; All models</a></div>
   <div class="picker">
     <label for="modelSel">Model</label>
     <select id="modelSel" class="ctrl">%s</select>
@@ -483,7 +490,7 @@ def build_snow(reg):
                   % (m["id"], " selected" if m["id"] == "ecmwf-seas5" else "",
                      m["name"]) for m in models)
     body = """<div class="card">
-  <div class="crumb"><a href="index.html">&larr; All models</a> &middot;
+  <div class="crumb"><a href="__SITE__">&larr; All models</a> &middot;
     <a href="model.html">Choose a variable</a></div>
   <h2 class="sec">Snowfall</h2>
   <p class="lead">Accumulated snowfall over the continental United States, in
@@ -641,7 +648,7 @@ def build_enso(reg):
     basins = ["Nino 3.4", "Nino 3", "Nino 4", "Nino 1+2"]
     bsel = "".join('<option value="%s">%s</option>' % (b, b) for b in basins)
     body = """<div class="card">
-  <div class="crumb"><a href="index.html">&larr; All models</a></div>
+  <div class="crumb"><a href="__SITE__">&larr; All models</a></div>
   <h2 class="sec">ENSO</h2>
   <p class="lead">Sea surface temperature anomaly in each of the four ENSO
   regions, against the 1991&ndash;2020 climatology of the same basin and month.
@@ -713,7 +720,7 @@ def build_spv(reg):
                   % (m["id"], " selected" if m["id"] == "ecmwf-seas5" else "",
                      m["name"]) for m in models)
     body = """<div class="card">
-  <div class="crumb"><a href="index.html">&larr; All models</a> &middot;
+  <div class="crumb"><a href="__SITE__">&larr; All models</a> &middot;
     <a href="model.html">Choose a variable</a></div>
   <h2 class="sec">Stratosphere &mdash; 10 hPa zonal-mean zonal wind</h2>
   <p class="lead">The stratospheric polar vortex proxy at 10&nbsp;hPa, in m/s.
