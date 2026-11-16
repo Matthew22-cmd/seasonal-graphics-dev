@@ -256,15 +256,22 @@ def footer():
 
 VER = ""
 
+# The site's own address.  The home page is the default entry point, so the
+# canonical URL of the home page is the bare directory and never the
+# "/index.html" form.
+SITE_URL = "https://massachusettswx-weather.github.io/seasonal-snow/"
+
 
 def page(title, active, body, version=""):
     v = ("?v=%s" % version) if version else ""
+    canonical = SITE_URL if active == "index.html" else SITE_URL + active
     return """<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>%s &middot; Seasonal Forecast Graphics</title>
+<link rel="canonical" href="%s">
 <link rel="stylesheet" href="assets/css/style.css%s">
 </head>
 <body>
@@ -273,7 +280,7 @@ def page(title, active, body, version=""):
 %s
 </div>
 </body>
-</html>""" % (title, v, header(active), body)
+</html>""" % (title, canonical, v, header(active), body)
 
 
 # --------------------------------------------------------------------------
