@@ -1,12 +1,17 @@
 """Check the published site: pages load, no broken images, no console errors.
 
     python3 verify_site.py [base-url]
+
+The base URL defaults to the operational site; the development copy is at
+https://matthew22-cmd.github.io/seasonal-graphics-dev/ .
 """
 import asyncio
+import os
 import sys
 
 BASE = sys.argv[1] if len(sys.argv) > 1 else \
-    "https://massachusettswx-weather.github.io/seasonal-graphics/"
+    os.environ.get("SITE_URL",
+                   "https://massachusettswx-weather.github.io/seasonal-graphics/")
 PAGES = ("index.html", "model.html", "snow.html", "spv.html",
          "enso.html")
 

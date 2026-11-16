@@ -247,12 +247,12 @@ def header(active):
     # default entry point.
     return """<header class="top">
   <h1><a href="%s">Seasonal Forecast Graphics</a></h1>
-  <span class="sub">%s</span>
+  <span class="sub">%s%s</span>
   <span class="spacer"></span>
-  <a href="https://github.com/massachusettswx-weather/seasonal-graphics" target="_blank"
+  <a href="%s" target="_blank"
      rel="noopener">GitHub</a>
 </header>
-<nav class="tabs">%s</nav>""" % (SITE_URL, INIT_SUB, links)
+<nav class="tabs">%s</nav>""" % (SITE_URL, INIT_SUB, DEV_TAG_SUB, SITE_REPO_URL, links)
 
 
 def footer():
@@ -269,7 +269,23 @@ VER = ""
 # The site's own address.  The home page is the default entry point, so the
 # canonical URL of the home page is the bare directory and never the
 # "/index.html" form.
-SITE_URL = "https://massachusettswx-weather.github.io/seasonal-graphics/"
+#
+# There are TWO sites: the operational one and the development copy.  The
+# build is told which one it is making through the environment, so the
+# absolute links (the nav tabs, the crumbs, the canonical tag, the title
+# link) and the "GitHub" link point at the right place in each build.
+#   SITE_URL        the site's base URL
+#   SITE_REPO_URL   the repository the "GitHub" link goes to
+#   SITE_DEV=1      mark the build as the development copy
+SITE_URL = os.environ.get(
+    "SITE_URL", "https://massachusettswx-weather.github.io/seasonal-graphics/")
+SITE_REPO_URL = os.environ.get(
+    "SITE_REPO_URL", "https://github.com/massachusettswx-weather/seasonal-graphics")
+SITE_DEV = os.environ.get("SITE_DEV", "") not in ("", "0", "no", "false")
+# the marker that says "this is not the operational site".  The browser tab
+# can only carry plain text; the header line can be marked up.
+DEV_TAG = " &middot; DEVELOPMENT COPY" if SITE_DEV else ""
+DEV_TAG_SUB = " &middot; <strong>DEVELOPMENT COPY</strong>" if SITE_DEV else ""
 
 
 def page(title, active, body, version=""):
@@ -282,7 +298,7 @@ def page(title, active, body, version=""):
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>%s &middot; Seasonal Forecast Graphics</title>
+<title>%s &middot; Seasonal Forecast Graphics%s</title>
 <link rel="canonical" href="%s">
 <link rel="stylesheet" href="assets/css/style.css%s">
 </head>
@@ -292,7 +308,7 @@ def page(title, active, body, version=""):
 %s
 </div>
 </body>
-</html>""" % (title, canonical, v, header(active), body)
+</html>""" % (title, DEV_TAG, canonical, v, header(active), body)
 
 
 # --------------------------------------------------------------------------
@@ -796,6 +812,23 @@ render();
     open(os.path.join(SITE, "spv.html"), "w").write(page("Stratosphere", "spv.html", body, VER))
 
 
+def write_readme():
+    """The README's link points at the site this build belongs to.
+
+    The development copy and the operational site are two repositories, so
+    each one's README has to lead to its own site.
+    """
+    p = os.path.join(HERE, "README.md")
+    if not os.path.exists(p):
+        return
+    with open(p) as f:
+        s = f.read()
+    new = s.replace("{{SITE_URL}}", SITE_URL)
+    if new != s:
+        with open(p, "w") as f:
+            f.write(new)
+
+
 def main():
     os.makedirs(os.path.join(ASSETS, "css"), exist_ok=True)
     os.makedirs(DATA, exist_ok=True)
@@ -809,7 +842,10 @@ def main():
     build_snow(reg)
     build_enso(reg)
     build_spv(reg)
+    write_readme()
     print("site built:", SITE)
+    if SITE_DEV:
+        print("  THE DEVELOPMENT COPY -> %s" % SITE_URL)
     for m in reg.get("models", []):
         print("  %-16s snow=%s spv=%s" % (m["id"], m["snow_ok"], m["spv_ok"]))
 

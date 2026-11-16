@@ -1,7 +1,24 @@
 #!/usr/bin/env bash
-# Create the GitHub repo (if needed), push this project and enable Pages.
+# Publish the site.
 #
-#   ./push_to_github.sh <github_token> [repo_name]
+#   ./push_to_github.sh              -> the DEVELOPMENT site (the default)
+#   ./push_to_github.sh --dev        -> the DEVELOPMENT site
+#   ./push_to_github.sh --prod       -> the OPERATIONAL site
+#   ./push_to_github.sh --dev <token>
+#
+# There are TWO sites, and they are two repositories:
+#
+#   dev   the working copy - everything goes here, always
+#         https://matthew22-cmd.github.io/seasonal-graphics-dev/
+#   prod  the operational site - only a deliberate --prod publish reaches it
+#         https://massachusettswx-weather.github.io/seasonal-graphics/
+#
+# The site is REBUILT for the target before the commit, so the absolute
+# links (the nav tabs, the crumbs, the canonical tag, the title link), the
+# "GitHub" link and the README's link all point at the right place in each
+# copy.  A change is therefore never automatically put on the operational
+# site: it goes to the development copy, and it reaches the operational
+# site only when --prod is asked for.
 #
 # The token needs the "repo" scope (classic) or Contents:Read+write
 # (fine-grained).  It is used once and then scrubbed from the git remote.
@@ -12,29 +29,72 @@
 #   3. Copy it once - GitHub only shows it at creation time.
 set -euo pipefail
 
+# ----------------------------------------------------------------------
+# the target
+# ----------------------------------------------------------------------
+TARGET="dev"
+ARGS=()
+for a in "$@"; do
+  case "$a" in
+    --dev)        TARGET="dev" ;;
+    --prod|--operational|--live) TARGET="prod" ;;
+    *)            ARGS+=("$a") ;;
+  esac
+done
+
+HERE="$(cd "$(dirname "$0")" && pwd)"
+cd "$HERE"
+export HOME="${HOME:-/workspace/.home}"
+export PYTHONPATH="${PYTHONPATH:-/workspace/.home/.local/lib/python3.11/site-packages}"
+
+if [ "$TARGET" = "prod" ]; then
+  REPO="seasonal-graphics"
+  OWNER="${GITHUB_OWNER:-massachusettswx-weather}"
+  SITE_URL="https://massachusettswx-weather.github.io/seasonal-graphics/"
+  SITE_REPO_URL="https://github.com/massachusettswx-weather/seasonal-graphics"
+  SITE_DEV=0
+  echo ">> target: the OPERATIONAL site (${SITE_URL})"
+else
+  REPO="seasonal-graphics-dev"
+  OWNER="${GITHUB_DEV_OWNER:-Matthew22-cmd}"
+  SITE_URL="https://matthew22-cmd.github.io/seasonal-graphics-dev/"
+  SITE_REPO_URL="https://github.com/Matthew22-cmd/seasonal-graphics-dev"
+  SITE_DEV=1
+  echo ">> target: the DEVELOPMENT site (${SITE_URL})"
+fi
+export SITE_URL SITE_REPO_URL SITE_DEV
+
 # The token comes from the first argument, or from data/.github_token (mode
 # 600, gitignored) so it never appears in the process list.
 TOKFILE="data/.github_token"
-if [ -n "${1:-}" ]; then
-    TOKEN="$1"
+if [ ${#ARGS[@]} -gt 0 ] && [ -n "${ARGS[0]}" ]; then
+  TOKEN="${ARGS[0]}"
 elif [ -f "$TOKFILE" ]; then
-    TOKEN="$(cat "$TOKFILE")"
+  TOKEN="$(cat "$TOKFILE")"
 else
-    echo "usage: ./push_to_github.sh <github_token> [repo_name]" >&2
-    echo "   (or put the token in $TOKFILE)" >&2
-    exit 1
+  echo "usage: ./push_to_github.sh [--dev|--prod] [<github_token>]" >&2
+  echo "   (or put the token in $TOKFILE)" >&2
+  exit 1
 fi
 [ -n "$TOKEN" ] || { echo "no token" >&2; exit 1; }
-REPO="${2:-seasonal-graphics}"
-OWNER="${GITHUB_OWNER:-massachusettswx-weather}"
-HERE="$(cd "$(dirname "$0")" && pwd)"
-cd "$HERE"
+
+# ----------------------------------------------------------------------
+# the build, for THIS target
+# ----------------------------------------------------------------------
+echo ">> building the site for this target"
+python3 -u build_site.py | sed 's/^/   /'
 
 if [ -z "$(git status --porcelain)" ]; then
   echo ">> working tree clean"
 else
   git add -A
-  git -c user.name="MCode" -c user.email="mcode@local" commit -q -m "Update site assets"
+  if [ "$TARGET" = "prod" ]; then
+    git -c user.name="MCode" -c user.email="mcode@local" commit -q \
+      -m "Publish the operational site"
+  else
+    git -c user.name="MCode" -c user.email="mcode@local" commit -q \
+      -m "Update the development site"
+  fi
   echo ">> committed outstanding changes"
 fi
 
@@ -48,32 +108,32 @@ exists=$(curl -s -o /dev/null -w '%{http_code}' \
     -H "Accept: application/vnd.github+json" \
     "https://api.github.com/repos/${OWNER}/${REPO}")
 if [ "$exists" = "200" ]; then
-    echo "   it is already there"
+  echo "   it is already there"
 else
-    LOGIN=$(curl -s -H "Authorization: Bearer ${TOKEN}" \
-        "https://api.github.com/user" | \
-        python3 -c "import json,sys;print(json.load(sys.stdin).get('login',''))" \
-        2>/dev/null || echo "")
-    if [ "$LOGIN" != "$OWNER" ]; then
-        echo "   the repo ${OWNER}/${REPO} is not there, and this token belongs"
-        echo "   to ${LOGIN:-another account}, so it cannot create it."
-        echo "   Create it by hand, or give that account write access to it"
-        echo "   (Settings -> Collaborators)."
-        exit 1
-    fi
-    code=$(curl -s -o /tmp/repo.json -w '%{http_code}' -X POST \
-        -H "Authorization: Bearer ${TOKEN}" \
-        -H "Accept: application/vnd.github+json" \
-        "https://api.github.com/user/repos" \
-        -d "{\"name\":\"${REPO}\",\"private\":false,\"has_pages\":true,\"description\":\"Seasonal snowfall and 10 hPa zonal wind graphics from ECMWF SEAS5 and other seasonal prediction systems\"}")
-    if [ "$code" = "201" ]; then
-        echo "   created"
-    elif [ "$code" = "422" ]; then
-        echo "   already exists"
-    else
-        echo "   WARNING: could not confirm repo creation (HTTP $code):"
-        head -c 400 /tmp/repo.json; echo
-    fi
+  LOGIN=$(curl -s -H "Authorization: Bearer ${TOKEN}" \
+      "https://api.github.com/user" | \
+      python3 -c "import json,sys;print(json.load(sys.stdin).get('login',''))" \
+      2>/dev/null || echo "")
+  if [ "$LOGIN" != "$OWNER" ]; then
+    echo "   the repo ${OWNER}/${REPO} is not there, and this token belongs"
+    echo "   to ${LOGIN:-another account}, so it cannot create it."
+    echo "   Create it by hand, or give that account write access to it"
+    echo "   (Settings -> Collaborators)."
+    exit 1
+  fi
+  code=$(curl -s -o /tmp/repo.json -w '%{http_code}' -X POST \
+    -H "Authorization: Bearer ${TOKEN}" \
+    -H "Accept: application/vnd.github+json" \
+    "https://api.github.com/user/repos" \
+    -d "{\"name\":\"${REPO}\",\"private\":false,\"has_pages\":true,\"description\":\"DEVELOPMENT COPY of the seasonal forecast graphics - the operational site is massachusettswx-weather/seasonal-graphics\"}")
+  if [ "$code" = "201" ]; then
+    echo "   created"
+  elif [ "$code" = "422" ]; then
+    echo "   already exists"
+  else
+    echo "   WARNING: could not confirm repo creation (HTTP $code):"
+    head -c 400 /tmp/repo.json; echo
+  fi
 fi
 
 echo ">> pushing"
