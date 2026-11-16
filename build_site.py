@@ -89,6 +89,8 @@ header.top{
   display:flex; align-items:baseline; gap:16px; flex-wrap:wrap;
 }
 header.top h1{font-size:20px; margin:0; font-weight:700; letter-spacing:.2px}
+header.top h1 a{color:#fff; text-decoration:none}
+header.top h1 a:hover{text-decoration:underline}
 header.top .sub{font-size:12.5px; color:#9fb0c6}
 header.top .spacer{flex:1}
 header.top a{color:#cfe0f5; text-decoration:none; font-size:13px}
@@ -235,14 +237,17 @@ def header(active):
     links = "".join(
         '<a href="%s"%s>%s</a>' % (h, ' class="active"' if h == active else "", t)
         for h, t in tabs)
+    # The site's own name is a link to its HOME PAGE - the bare directory,
+    # not the "/index.html" form - so every page carries a real link to the
+    # default entry point.
     return """<header class="top">
-  <h1>Seasonal Forecast Graphics</h1>
+  <h1><a href="%s">Seasonal Forecast Graphics</a></h1>
   <span class="sub">%s</span>
   <span class="spacer"></span>
   <a href="https://github.com/massachusettswx-weather/seasonal-snow" target="_blank"
      rel="noopener">GitHub</a>
 </header>
-<nav class="tabs">%s</nav>""" % (INIT_SUB, links)
+<nav class="tabs">%s</nav>""" % (SITE_URL, INIT_SUB, links)
 
 
 def footer():
