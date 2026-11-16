@@ -1,9 +1,9 @@
 # Seasonal forecast graphics
 
 **[Seasonal Forecast Graphics](https://matthew22-cmd.github.io/seasonal-graphics-dev/)**
-— the live site. That address is the site's home page and the default entry
-point; the `/index.html` form is the same page but is not the address to
-publish.
+— the site this copy serves. That address is the site's home page and the
+default entry point; the `/index.html` form is the same page but is not the
+address to publish.
 
 Snowfall and 10 hPa zonal-mean zonal wind (SPV) panels from the ECMWF SEAS5
 and the C3S seasonal prediction systems, for the November 2026 / October 2026
@@ -176,15 +176,50 @@ Checked against ERA5: the ECMWF 10 hPa seasonal cycle over the Great Lakes
 correlates **r = 0.96** with the ERA5 calendar climatology at zero offset, so
 lead *k* really is calendar month *k*.
 
+## The two sites: a development copy and the operational one
+
+There are TWO sites, and they are two repositories:
+
+| | repository | address | what goes there |
+|---|---|---|---|
+| **dev** | `Matthew22-cmd/seasonal-graphics-dev` | `https://matthew22-cmd.github.io/seasonal-graphics-dev/` | everything, always |
+| **operational** | `massachusettswx-weather/seasonal-graphics` | `https://massachusettswx-weather.github.io/seasonal-graphics/` | only what has been promoted |
+
+```bash
+./push_to_github.sh            # the DEVELOPMENT site (the default)
+./push_to_github.sh --prod     # the OPERATIONAL site
+```
+
+So a change is **never** automatically put on the operational site: it goes
+to the development copy, where it can be anything, and it reaches the
+operational site only when `--prod` is asked for.  That is the whole point -
+develop whatever you want on the dev copy, and promote what works.
+
+The push script **rebuilds the site for its target** before it commits, so
+the absolute links (the nav tabs, the crumbs, the canonical tag, the title
+link), the "GitHub" link and the README's link all point at the right
+place in each copy - and the development copy is marked
+"DEVELOPMENT COPY" in the header and the browser tab so nobody mistakes it
+for the live site.
+
+The build takes its target from the environment:
+
+| variable | meaning |
+|---|---|
+| `SITE_URL` | the site's base URL |
+| `SITE_REPO_URL` | the repository the "GitHub" link goes to |
+| `SITE_DEV=1` | mark the build as the development copy |
+
 ## Pushing to GitHub
 
 ```bash
-./push_to_github.sh <github_token> [repo_name]
+./push_to_github.sh [--dev|--prod] [<github_token>]
 ```
 
-Creates `massachusettswx-weather/seasonal-graphics`, pushes `main`, enables Pages
-(source: main /docs) and prints the live URL. See `GITHUB_TOKEN.md` for how
-to mint the token.
+Creates the target repository if it is not there yet, pushes `main`, enables
+Pages (source: main /docs) and prints the live URL.  The token comes from
+`data/.github_token` when it is not given on the command line.  See
+`GITHUB_TOKEN.md` for how to mint one.
 
 ## The pipeline
 

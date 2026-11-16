@@ -816,14 +816,19 @@ def write_readme():
     """The README's link points at the site this build belongs to.
 
     The development copy and the operational site are two repositories, so
-    each one's README has to lead to its own site.
+    each one's README has to lead to its own site.  The link is rewritten by
+    pattern, not by a placeholder, because the build also WRITES the README
+    back - a placeholder would be consumed by the first build and the second
+    one would have nothing to replace.
     """
+    import re
     p = os.path.join(HERE, "README.md")
     if not os.path.exists(p):
         return
     with open(p) as f:
         s = f.read()
-    new = s.replace("{{SITE_URL}}", SITE_URL)
+    new = re.sub(r"(\*\*\[Seasonal Forecast Graphics\]\()[^)]*(\)\*\*)",
+                 lambda m: m.group(1) + SITE_URL + m.group(2), s)
     if new != s:
         with open(p, "w") as f:
             f.write(new)
