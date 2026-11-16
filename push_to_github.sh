@@ -81,6 +81,21 @@ else
 fi
 export SITE_URL SITE_REPO_URL SITE_DEV
 
+# The development copy is private: it is built with a password gate in
+# front of it.  The password is read from the gitignored file (or from the
+# environment) and only its SHA-256 hash reaches the published pages.
+if [ "$SITE_DEV" = "1" ]; then
+  if [ -z "${DEV_GATE_PASSWORD:-}" ] && [ -f data/.dev_gate_password ]; then
+    DEV_GATE_PASSWORD="$(tr -d '\n' < data/.dev_gate_password)"
+  fi
+  if [ -z "${DEV_GATE_PASSWORD:-}" ]; then
+    echo "ERROR: the development copy needs a password." >&2
+    echo "       Put one in data/.dev_gate_password or set DEV_GATE_PASSWORD." >&2
+    exit 2
+  fi
+  export DEV_GATE_PASSWORD
+fi
+
 # The token comes from the first argument, or from data/.github_token (mode
 # 600, gitignored) so it never appears in the process list.
 TOKFILE="data/.github_token"

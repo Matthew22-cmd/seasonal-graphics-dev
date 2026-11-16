@@ -13,7 +13,7 @@ Data
 
 Run after any re-render:  python3 build_site.py
 """
-import os, json
+import os, json, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SITE = os.path.join(HERE, "docs")
@@ -302,6 +302,109 @@ SITE_DEV = os.environ.get("SITE_DEV", "") not in ("", "0", "no", "false")
 DEV_TAG = " &middot; DEVELOPMENT COPY" if SITE_DEV else ""
 DEV_TAG_SUB = " &middot; <strong>DEVELOPMENT COPY</strong>" if SITE_DEV else ""
 
+# The development copy is PRIVATE: it sits behind a password.  GitHub Pages
+# only serves public repositories on a free plan, so the repository has to
+# stay public - the gate in front of the pages is what keeps the site to
+# the people who have the password.  The password lives in
+# data/.dev_gate_password (gitignored) or in $DEV_GATE_PASSWORD; only its
+# SHA-256 hash is written into the pages, so the password itself is never
+# in the published files.
+def _gate_password():
+    pw = os.environ.get("DEV_GATE_PASSWORD", "").strip()
+    if not pw:
+        pf = os.path.join(HERE, "data", ".dev_gate_password")
+        if os.path.exists(pf):
+            pw = open(pf).read().strip()
+    return pw
+
+GATE_PASSWORD = _gate_password() if SITE_DEV else ""
+GATE_HASH = ""
+if GATE_PASSWORD:
+    import hashlib
+    GATE_HASH = hashlib.sha256(GATE_PASSWORD.encode()).hexdigest()
+elif SITE_DEV:
+    sys.stderr.write(
+        "WARNING: the development copy has no gate password "
+        "(data/.dev_gate_password) - the site will be public.\n")
+
+
+def gate_script():
+    """The small blocking script that guards every page.
+
+    It runs in the <head>, before anything is drawn, so an unapproved
+    visitor never sees the page - it is redirected to the login page.
+    """
+    if not GATE_HASH:
+        return ""
+    return (
+        "<script>(function(){var H=%s;try{"
+        "if(localStorage.getItem('devgate')!==H){"
+        "location.replace('login.html');return;}}catch(e){}})();</script>"
+        % json.dumps(GATE_HASH))
+
+
+def build_login_page():
+    """The development copy's login page (login.html).
+
+    The password is hashed in the browser with SHA-256 and compared with
+    the hash in this page; on a match the hash is stored and the visitor
+    is sent to the home page.
+    """
+    if not GATE_HASH:
+        return
+    html = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Sign in &middot; Seasonal Forecast Graphics (development)</title>
+<link rel="stylesheet" href="assets/css/style.css">
+<style>
+.gate{max-width:26rem;margin:4rem auto;padding:2rem;border:1px solid #d7d7d7;
+ background:#fff;border-radius:8px;text-align:center}
+.gate h1{font-size:1.15rem;margin:0 0 .4rem}
+.gate p{font-size:.9rem;color:#555;margin:0 0 1.2rem}
+.gate input{width:100%;padding:.6rem;font-size:1rem;border:1px solid #bbb;
+ border-radius:4px;box-sizing:border-box}
+.gate button{margin-top:.8rem;width:100%;padding:.6rem;font-size:1rem;
+ border:0;border-radius:4px;background:#1f4c44;color:#fff;cursor:pointer}
+.gate .err{color:#a11;min-height:1.2em;font-size:.85rem;margin:.6rem 0 0}
+</style>
+</head>
+<body>
+<div class="gate">
+<h1>Seasonal Forecast Graphics</h1>
+<p>Development copy &mdash; this site is private.<br>Enter the development password.</p>
+<form id="f">
+<input id="pw" type="password" placeholder="password" autofocus autocomplete="current-password">
+<button type="submit">Sign in</button>
+</form>
+<p class="err" id="msg"></p>
+</div>
+<script>
+var HASH=__HASH__;
+async function sha256(s){
+  const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s));
+  return Array.from(new Uint8Array(b)).map(function(x){
+    return x.toString(16).padStart(2,'0');}).join('');
+}
+document.getElementById('f').addEventListener('submit',async function(e){
+  e.preventDefault();
+  var h=await sha256(document.getElementById('pw').value);
+  if(h===HASH){
+    try{localStorage.setItem('devgate',HASH);}catch(err){}
+    location.replace('index.html');
+  }else{
+    document.getElementById('msg').textContent='That password does not match.';
+  }
+});
+</script>
+</body>
+</html>""".replace("__HASH__", json.dumps(GATE_HASH))
+    with open(os.path.join(SITE, "login.html"), "w") as f:
+        f.write(html)
+
 
 def page(title, active, body, version=""):
     v = ("?v=%s" % version) if version else ""
@@ -316,6 +419,7 @@ def page(title, active, body, version=""):
 <title>%s &middot; Seasonal Forecast Graphics%s</title>
 <link rel="canonical" href="%s">
 <link rel="stylesheet" href="assets/css/style.css%s">
+%s
 </head>
 <body>
 %s
@@ -324,7 +428,8 @@ def page(title, active, body, version=""):
 </div>
 %s
 </body>
-</html>""" % (title, DEV_TAG, canonical, v, header(active), body, footer())
+</html>""" % (title, DEV_TAG, canonical, v, header(active), body, footer(),
+              gate_script())
 
 
 # --------------------------------------------------------------------------
@@ -867,6 +972,7 @@ def main():
     build_snow(reg)
     build_enso(reg)
     build_spv(reg)
+    build_login_page()
     write_readme()
     print("site built:", SITE)
     if SITE_DEV:
