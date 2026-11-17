@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Maps &middot; Seasonal Forecast Graphics &middot; DEVELOPMENT COPY</title>
+<link rel="canonical" href="https://matthew22-cmd.github.io/seasonal-graphics-dev/maps.html">
+<link rel="stylesheet" href="assets/css/style.css?v=20261117002838">
+<header class="top">
+  <h1><a href="https://matthew22-cmd.github.io/seasonal-graphics-dev/">Seasonal Forecast Graphics</a></h1>
+  <span class="sub">ECMWF SEAS5 &amp; C3S seasonal systems &middot; November 2026 init &middot; <strong>DEVELOPMENT COPY</strong></span>
+  <span class="spacer"></span>
+  <a href="https://github.com/Matthew22-cmd/seasonal-graphics-dev" target="_blank"
+     rel="noopener">GitHub</a>
+</header>
+<nav class="tabs"><a href="https://matthew22-cmd.github.io/seasonal-graphics-dev/">Home</a><a href="https://matthew22-cmd.github.io/seasonal-graphics-dev/model.html">Model</a><a href="https://matthew22-cmd.github.io/seasonal-graphics-dev/snow.html">Snowfall</a><a href="https://matthew22-cmd.github.io/seasonal-graphics-dev/spv.html">Stratosphere</a><a href="https://matthew22-cmd.github.io/seasonal-graphics-dev/enso.html">ENSO</a><a href="https://matthew22-cmd.github.io/seasonal-graphics-dev/maps.html" class="active">Maps</a></nav>
+</head>
+<body>
+<div class="card">
+  <div class="crumb"><a href="https://matthew22-cmd.github.io/seasonal-graphics-dev/">&larr; All models</a> &middot;
+    <a href="maps.html">Maps</a></div>
+  <h2 class="sec">Maps</h2>
+  <p class="lead">The whole world in three configurations, drawn from
+  Natural Earth 1:50m data: the flat map on an equirectangular grid, the
+  globe you can spin, and the polar projection with the pole at the
+  centre. The two sectors of the polar cap section - the North Pacific
+  and the North Atlantic, 60N&ndash;90N - are marked on all three, in
+  the colours the charts on the stratosphere page use.</p>
+  <div class="mapviews" id="mapviews">
+    <button data-view="flat">2D Map</button>
+    <button data-view="globe" class="active">3D Globe</button>
+    <button data-view="polar">Polar</button>
+  </div>
+  <div class="mapbox" id="mapbox">
+    <svg id="mapsvg"></svg>
+    <div id="maptip"></div>
+  </div>
+  <p class="mapload" id="mapload" style="display:none">Loading the map data&hellip;</p>
+  <p class="mapnote" id="mapnote"></p>
+</div>
+
+<script src="assets/js/d3.v7.min.js?v=20261117002838"></script>
+<script src="assets/js/maps.js?v=20261117002838"></script>
+<div class="wrap">
+<footer>
+  <span>Data: Copernicus CDS (ECMWF SEAS5 and C3S seasonal systems) &middot;
+        ERA5 reanalysis and climatology 1991&ndash;2020 &middot;
+        NOAA CORe reanalysis (the polar cap section) &middot;
+        ECMWF open data &middot; the figures are from the 17 Nov 2026 build</span>
+  <span><strong>@Massachusettswx</strong></span>
+</footer>
+</div>
+<script>(function(){var H="866da46e2e6cd6f6b5aa489cb6a738be078fe7bda1f638a3b8bea8d1d55993c2";try{if(localStorage.getItem('devgate')!==H){location.replace('login.html');return;}}catch(e){}})();</script>
+</body>
+</html>

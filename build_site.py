@@ -183,6 +183,47 @@ tr:last-child td{border-bottom:none}
 footer{border-top:1px solid var(--line); margin-top:26px; padding:16px 0 0;
   color:var(--muted); font-size:12.5px; display:flex; justify-content:space-between}
 a{color:#1c4b8a}
+
+/* the interactive maps page: the three world configurations */
+.mapviews{display:flex; gap:8px; flex-wrap:wrap; margin:0 0 14px}
+.mapviews button{font:inherit; font-size:13px; padding:7px 14px; cursor:pointer;
+  border:1px solid var(--line); background:var(--card); color:var(--text);
+  border-radius:999px}
+.mapviews button.active{background:#12263f; color:#fff; border-color:#12263f}
+.mapbox{position:relative; width:100%; overflow:hidden; border-radius:10px;
+  border:1px solid #1c2430; background-color:#05070e;
+  background-image:
+    radial-gradient(1px 1px at 12% 22%, rgba(255,255,255,.85), transparent),
+    radial-gradient(1px 1px at 34% 68%, rgba(255,255,255,.55), transparent),
+    radial-gradient(1.4px 1.4px at 58% 14%, rgba(255,255,255,.8), transparent),
+    radial-gradient(1px 1px at 76% 44%, rgba(255,255,255,.5), transparent),
+    radial-gradient(1.3px 1.3px at 88% 78%, rgba(255,255,255,.7), transparent),
+    radial-gradient(1px 1px at 22% 86%, rgba(255,255,255,.45), transparent),
+    radial-gradient(1.2px 1.2px at 46% 38%, rgba(255,255,255,.6), transparent),
+    radial-gradient(1px 1px at 66% 92%, rgba(255,255,255,.5), transparent),
+    radial-gradient(1px 1px at 92% 12%, rgba(255,255,255,.6), transparent),
+    radial-gradient(140% 120% at 50% 50%, rgba(38,74,140,.35), transparent 70%);
+}
+.mapbox svg{display:block; width:100%; height:auto; touch-action:none}
+.mapnote{font-size:12.5px; color:var(--muted); margin:12px 0 0; max-width:60rem}
+.mapload{font-size:12.5px; color:var(--muted); margin:8px 0 0}
+#maptip{position:absolute; display:none; pointer-events:none; z-index:5;
+  background:rgba(8,12,20,.9); color:#fff; font-size:12px; padding:3px 7px;
+  border-radius:4px; white-space:nowrap}
+/* the map's own colours: a pale Earth on a dark sky */
+.ocean{fill:#eaf1f7; stroke:#c3ced8; stroke-width:.6}
+.grat{fill:none; stroke:#b6c2cc; stroke-width:.5; stroke-dasharray:2 3; opacity:.75}
+.country{fill:#f7f4ec; stroke:#38424f; stroke-width:.45}
+.country:hover{fill:#ffe9b0}
+.lake{fill:#dfe9f2; stroke:#c3ced8; stroke-width:.35}
+.land{fill:#f7f4ec; stroke:#38424f; stroke-width:.4}
+.sector{stroke:#1c2430; stroke-width:.5; opacity:.72}
+.sectorlabel{font-size:12px; font-weight:700; text-anchor:middle;
+  paint-order:stroke; stroke:#fff; stroke-width:2.6px; stroke-linejoin:round}
+.capedge{fill:none; stroke:#38424f; stroke-width:1.2}
+.outerring{fill:none; stroke:#8b97a3; stroke-width:.9}
+.equator{fill:none; stroke:#8b9199; stroke-width:.8}
+.pole{fill:#12263f; stroke:none}
 """
 
 
@@ -236,7 +277,8 @@ def header(active):
             ("model.html", "Model"),
             ("snow.html", "Snowfall"),
             ("spv.html", "Stratosphere"),
-            ("enso.html", "ENSO")]
+            ("enso.html", "ENSO"),
+            ("maps.html", "Maps")]
     links = "".join(
         '<a href="%s"%s>%s</a>'
         % (SITE_URL if h == "index.html" else SITE_URL + h,
@@ -937,6 +979,66 @@ render();
     open(os.path.join(SITE, "spv.html"), "w").write(page("Stratosphere", "spv.html", body, VER))
 
 
+def build_maps_page(reg):
+    """The interactive Natural Earth maps page.
+
+    Three views of the same geography - the flat world, the globe and the
+    polar region with the two sectors - drawn in the browser from the
+    Natural Earth 1:50m files that are committed to the repository.  The
+    script and the map data are copied into the site by copy_map_assets().
+    """
+    body = """<div class="card">
+  <div class="crumb"><a href="__SITE__">&larr; All models</a> &middot;
+    <a href="maps.html">Maps</a></div>
+  <h2 class="sec">Maps</h2>
+  <p class="lead">The whole world in three configurations, drawn from
+  Natural Earth 1:50m data: the flat map on an equirectangular grid, the
+  globe you can spin, and the polar projection with the pole at the
+  centre. The two sectors of the polar cap section - the North Pacific
+  and the North Atlantic, 60N&ndash;90N - are marked on all three, in
+  the colours the charts on the stratosphere page use.</p>
+  <div class="mapviews" id="mapviews">
+    <button data-view="flat">2D Map</button>
+    <button data-view="globe" class="active">3D Globe</button>
+    <button data-view="polar">Polar</button>
+  </div>
+  <div class="mapbox" id="mapbox">
+    <svg id="mapsvg"></svg>
+    <div id="maptip"></div>
+  </div>
+  <p class="mapload" id="mapload" style="display:none">Loading the map data&hellip;</p>
+  <p class="mapnote" id="mapnote"></p>
+</div>
+
+<script src="assets/js/d3.v7.min.js?v=%s"></script>
+<script src="assets/js/maps.js?v=%s"></script>""" % (VER, VER)
+    open(os.path.join(SITE, "maps.html"), "w").write(
+        page("Maps", "maps.html", body, VER))
+
+
+def copy_map_assets():
+    """Copy the map script, the library and the Natural Earth files.
+
+    The Natural Earth data is committed to the repository, so the site
+    never depends on a download at build time.
+    """
+    import shutil
+    jsdir = os.path.join(ASSETS, "js")
+    os.makedirs(jsdir, exist_ok=True)
+    shutil.copy(os.path.join(HERE, "assets", "js", "d3.v7.min.js"),
+                os.path.join(jsdir, "d3.v7.min.js"))
+    shutil.copy(os.path.join(HERE, "assets", "js", "maps.js"),
+                os.path.join(jsdir, "maps.js"))
+    nedir = os.path.join(ASSETS, "ne")
+    os.makedirs(nedir, exist_ok=True)
+    for fn in ("ne_50m_admin_0_countries.geojson",
+               "ne_50m_lakes.geojson",
+               "ne_50m_land.geojson"):
+        src = os.path.join(HERE, "data", fn)
+        if os.path.exists(src):
+            shutil.copy(src, os.path.join(nedir, fn))
+
+
 def write_readme():
     """The README's link points at the site this build belongs to.
 
@@ -972,6 +1074,8 @@ def main():
     build_snow(reg)
     build_enso(reg)
     build_spv(reg)
+    build_maps_page(reg)
+    copy_map_assets()
     if SITE_DEV:
         build_login_page()
     else:
