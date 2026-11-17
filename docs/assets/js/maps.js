@@ -40,7 +40,10 @@
      projection's own longitude at the bottom, so the rotation is 0. */
   var POLAR_ROT = [0, -90];
 
-  var state = {view: "globe", data: {}, rot: [-40, -25], drag: null};
+  /* the globe opens over North America, where the snowfall field is:
+     d3's rotate() puts (-lambda, -phi) at the centre */
+  var state = {view: "globe", data: {}, rot: [95, -35], drag: null,
+               snow: {tag: null, month: -1, data: null, index: null}};
 
   function el(id) { return document.getElementById(id); }
 
@@ -135,6 +138,8 @@
     g.selectAll("path.lake").data(state.data.lakes.features)
       .join("path").attr("class", "lake").attr("d", path);
 
+    drawSnow(g, path);
+
     /* the cap's edge, at 60N */
     svg.append("path").datum(capLine()).attr("class", "capedge")
       .attr("d", path);
@@ -192,6 +197,8 @@
     g.selectAll("path.lake").data(state.data.lakes.features)
       .join("path").attr("class", "lake").attr("d", path);
 
+    drawSnow(g, path);
+
     /* the cap's edge at 60N */
     svg.append("path").datum(capLine()).attr("class", "capedge")
       .attr("d", path);
@@ -247,6 +254,8 @@
     g.selectAll("path.lake").data(state.data.lakes.features)
       .join("path").attr("class", "lake").attr("d", path);
 
+    drawSnow(g, path);
+
     /* the graticule: the latitude circles and the longitude spokes */
     var grat = {type: "MultiLineString", coordinates: []};
     [60, 30].forEach(function (lat) {
@@ -270,6 +279,115 @@
          "polar cap solid. The North Pacific sector is at the top and the " +
          "North Atlantic at the bottom, exactly as on the stratosphere " +
          "page.");
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* the snowfall layer                                                */
+
+  /* The cells are drawn as one path per colour band, so a band of the
+     colour scale is a single element rather than a thousand. */
+  function drawSnow(g, path) {
+    var sn = state.snow;
+    if (!sn.data) { return; }
+    var d = sn.data;
+    var grid = d.grid;
+    var vals = (sn.month < 0) ? d.total : d.fields[sn.month];
+    if (!vals) { return; }
+    var levels = d.levels, colors = d.colors;
+    var ramp = d.ramp || colors;
+
+    /* the colour of each cell: the published ladder, interpolated */
+    var bands = {};
+    var i, j, k, v, band, idx;
+    for (i = 0; i < grid.nlat; i++) {
+      for (j = 0; j < grid.nlon; j++) {
+        k = i * grid.nlon + j;
+        v = vals[k];
+        if (v === null || v === undefined || !(v > 0)) { continue; }
+        band = 0;
+        for (var b = 0; b < levels.length; b++) {
+          if (v >= levels[b]) { band = b; }
+        }
+        /* interpolate inside the band, on the log scale the ladder uses */
+        var lo = levels[band];
+        var hi = (band + 1 < levels.length) ? levels[band + 1] : lo;
+        var f = 0;
+        if (hi > lo && v < hi) {
+          f = (Math.log(v) - Math.log(lo)) / (Math.log(hi) - Math.log(lo));
+        }
+        idx = Math.round((band + f) * (ramp.length - 1) / (levels.length - 1));
+        if (!bands[idx]) { bands[idx] = []; }
+        bands[idx].push(cell(grid, i, j));
+      }
+    }
+    var keys = Object.keys(bands).map(Number).sort(function (a, b) { return a - b; });
+    keys.forEach(function (b) {
+      g.append("path")
+        .attr("class", "snowband")
+        .attr("fill", ramp[Math.min(b, ramp.length - 1)])
+        .attr("d", path({type: "MultiPolygon",
+                         coordinates: bands[b].map(function (c) { return [c]; })}));
+    });
+  }
+
+  /* one grid cell as a closed lon/lat ring */
+  function cell(grid, i, j) {
+    var lat1 = grid.lat0 - i * grid.dlat;
+    var lat2 = lat1 - grid.dlat;
+    var lon1 = grid.lon0 + j * grid.dlon;
+    var lon2 = lon1 + grid.dlon;
+    return [[lon1, lat1], [lon2, lat1], [lon2, lat2], [lon1, lat2], [lon1, lat1]];
+  }
+
+  /* the colour legend, drawn from the field's own ladder */
+  function drawLegend() {
+    var box = el("maplegend"), sn = state.snow;
+    if (!box) { return; }
+    box.innerHTML = "";
+    if (!sn.data) { return; }
+    var d = sn.data;
+    var wrap = document.createElement("div");
+    wrap.style.width = "100%";
+    var bar = document.createElement("div");
+    bar.className = "bar";
+    d.colors.forEach(function (c) {
+      var i = document.createElement("i");
+      i.style.background = c;
+      bar.appendChild(i);
+    });
+    var ends = document.createElement("div");
+    ends.className = "ends";
+    var lo = document.createElement("span");
+    lo.textContent = d.levels[0] + " in";
+    var hi = document.createElement("span");
+    hi.textContent = d.levels[d.levels.length - 1] + " in of snow";
+    ends.appendChild(lo);
+    ends.appendChild(hi);
+    var cap = document.createElement("div");
+    cap.style.marginTop = "4px";
+    cap.textContent = "Snowfall, inches of snow depth (" + d.name +
+      ", " + d.members + " members) on the 0-300 in snow-depth scale";
+    wrap.appendChild(bar);
+    wrap.appendChild(ends);
+    box.appendChild(wrap);
+    box.appendChild(cap);
+  }
+
+  function loadSnow(tag) {
+    var sn = state.snow;
+    sn.tag = tag;
+    sn.month = -1;
+    sn.data = null;
+    if (!tag) { draw(); return; }
+    d3.json("data/snowmap_" + tag + ".json").then(function (d) {
+      sn.data = d;
+      fillMonths();
+      drawLegend();
+      draw();
+    }).catch(function (e) {
+      var n = el("mapload");
+      if (n) { n.style.display = "block"; n.textContent = "The snowfall field could not be loaded: " + e; }
+    });
   }
 
   /* ---------------------------------------------------------------- */
@@ -347,6 +465,51 @@
     load();
   }
 
+  function initSnow() {
+    /* the model and month pickers, and the colour legend */
+    var msel = el("snowModel"), msel2 = el("snowMonth");
+    d3.json("data/snowmap_tags.json").then(function (index) {
+      state.snow.index = index;
+      if (!msel) { return; }
+      index.forEach(function (m, i) {
+        var o = document.createElement("option");
+        o.value = m.tag;
+        o.textContent = m.name;
+        if (i === 0) { o.selected = true; }
+        msel.appendChild(o);
+      });
+      msel.addEventListener("change", function () {
+        loadSnow(msel.value);
+        fillMonths();
+      });
+      fillMonths();
+      if (index.length) { loadSnow(index[0].tag); }
+    }).catch(function () {});
+  }
+
+  function fillMonths() {
+    var msel = el("snowMonth"), sn = state.snow;
+    if (!msel) { return; }
+    msel.innerHTML = "";
+    var o = document.createElement("option");
+    o.value = "-1";
+    o.textContent = "Total (init to end)";
+    o.selected = true;
+    msel.appendChild(o);
+    if (!sn.data) { return; }
+    sn.data.months.forEach(function (m, i) {
+      var e = document.createElement("option");
+      e.value = String(i);
+      e.textContent = m.label;
+      msel.appendChild(e);
+    });
+    msel.addEventListener("change", function () {
+      sn.month = parseInt(msel.value, 10);
+      draw();
+    });
+    sn.month = -1;
+  }
+
   function init() {
     if (typeof d3 === "undefined") { return; }
     var btns = document.querySelectorAll("#mapviews button");
@@ -354,6 +517,7 @@
       b.addEventListener("click", function () { setView(b.dataset.view); });
     });
     window.addEventListener("resize", draw);
+    initSnow();
     setView(state.view);
   }
 

@@ -218,6 +218,14 @@ a{color:#1c4b8a}
 .lake{fill:#dfe9f2; stroke:#c3ced8; stroke-width:.35}
 .land{fill:#f7f4ec; stroke:#38424f; stroke-width:.4}
 .sector{stroke:#1c2430; stroke-width:.5; opacity:.72}
+.snowband{stroke:none}
+.maplegend{display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+  margin:0 0 10px; font-size:12px; color:var(--muted)}
+.maplegend .bar{display:flex; height:12px; border:1px solid #1c2430;
+  border-radius:2px; overflow:hidden}
+.maplegend .bar i{display:block; width:16px; height:100%}
+.maplegend .ends{display:flex; justify-content:space-between; width:100%;
+  margin-top:-2px; font-size:11px}
 .sectorlabel{font-size:12px; font-weight:700; text-anchor:middle;
   paint-order:stroke; stroke:#fff; stroke-width:2.6px; stroke-linejoin:round}
 .capedge{fill:none; stroke:#38424f; stroke-width:1.2}
@@ -1002,6 +1010,13 @@ def build_maps_page(reg):
     <button data-view="globe" class="active">3D Globe</button>
     <button data-view="polar">Polar</button>
   </div>
+  <div class="picker">
+    <label for="snowModel">Snowfall</label>
+    <select id="snowModel" class="ctrl"></select>
+    <label for="snowMonth">Period</label>
+    <select id="snowMonth" class="ctrl"></select>
+  </div>
+  <div class="maplegend" id="maplegend"></div>
   <div class="mapbox" id="mapbox">
     <svg id="mapsvg"></svg>
     <div id="maptip"></div>
